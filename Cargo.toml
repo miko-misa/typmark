@@ -1,0 +1,12 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/miko-misa/typmark"
+rust-version = "1.85"
+
+[workspace.dependencies]
+# 後でここに共通依存を集約（複数クレートでバージョンを揃える）

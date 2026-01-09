@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.85
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo fmt
+        if: ${{ hashFiles('**/*.rs') != '' }}
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        if: ${{ hashFiles('**/*.rs') != '' }}
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: cargo test
+        if: ${{ hashFiles('**/*.rs') != '' }}
+        run: cargo test --workspace --all-targets --all-features --locked
