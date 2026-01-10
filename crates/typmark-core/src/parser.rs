@@ -2703,11 +2703,14 @@ fn parse_atx_heading(text: &str) -> Option<(u8, usize, usize)> {
         while hash_start > content_start && bytes[hash_start - 1] == b'#' {
             hash_start -= 1;
         }
-        if hash_start < content_end && hash_start > content_start {
-            if is_space_or_tab(bytes[hash_start - 1]) {
-                let mut pre = hash_start - 1;
-                while pre > content_start && is_space_or_tab(bytes[pre - 1]) {
-                    pre -= 1;
+        if hash_start < content_end && hash_start >= content_start {
+            if hash_start == content_start || is_space_or_tab(bytes[hash_start - 1]) {
+                let mut pre = hash_start;
+                if hash_start > content_start {
+                    pre = hash_start - 1;
+                    while pre > content_start && is_space_or_tab(bytes[pre - 1]) {
+                        pre -= 1;
+                    }
                 }
                 content_end = pre;
             }
