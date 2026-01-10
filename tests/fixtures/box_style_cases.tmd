@@ -1,0 +1,14 @@
+{#simple}
+::: box
+Simple box.
+:::
+
+{#styled bg="#f0f0f0" border-style="solid" border-width="2px" border-color="#ccc" title-bg="#e0e0e0"}
+::: box Styled Box
+This box has style attributes.
+:::
+
+{#custom bg="#fff" custom-key="custom-value"}
+::: box Custom
+Box with custom attributes.
+:::

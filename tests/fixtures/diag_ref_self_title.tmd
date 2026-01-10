@@ -1,0 +1,7 @@
+{#s}
+# See @s
+
+{#b}
+::: box See @b
+Body.
+:::

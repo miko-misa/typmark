@@ -1,0 +1,13 @@
+{#bad!}
+Paragraph.
+
+```c {hl="1:bad label"}
+int main(void) {}
+```
+
+{#ok key=foo bar}
+Paragraph.
+
+```c {hl="5-3" diff_add="a" diff_del="2-1"}
+alpha
+```

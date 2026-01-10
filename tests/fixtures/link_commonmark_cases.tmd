@@ -1,0 +1,63 @@
+[inline-empty]()
+
+[inline-angle](<my uri>)
+
+[inline-nest](foo(bar(baz)))
+
+[inline-unicode](/φου)
+
+[coll-foo][] and [coll-bar]
+[coll-foo]: /foo
+[coll-bar]: /bar
+
+[ref-empty]: <>
+[ref-empty]
+
+[ref-angle]: <my uri>
+[ref-angle]
+
+[ΑΓΩ]: /url
+[αγω]
+
+[ref-unicode]: /φου
+[ref-unicode]
+
+[ref-esc]: /url\bar\*baz "foo\"bar\baz"
+[ref-esc]
+
+[ref-nospace]: <bar>(baz)
+
+[ref-nospace]
+
+[ref-trail]: /url "title" ok
+
+[
+mlabel
+]: /url
+bar
+
+   [indent3]: /url
+[indent3]
+
+    [indent4]: /url
+[indent4]
+
+[ml-dest]:
+/url
+
+[ml-dest]
+
+[ml-title]: /url
+"title"
+
+[ml-title]
+
+[ml-title-lines]: /url '
+title
+line1
+line2
+'
+
+[ml-title-lines]
+
+[Unresolved MiXeD CaSe]

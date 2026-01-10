@@ -1,0 +1,23 @@
+See [site][home] and [shortcut].
+[home]: https://example.com "Example"
+[shortcut]: https://example.org
+
+See [site][home2].
+
+[home2]: https://example.com
+
+See [Text][My   Label] and [My Label][] and [my label].
+[my label]: <https://example.com> 'Title'
+
+See [text][x\\y].
+[x\\y]: https://example.com
+
+See [missing][label] and [unknown].
+
+{#t}
+# Title
+
+See @t[brackets: \[ok\], backslash: \\ and *em*].
+
+See @missing[missing].
+# Heading @missing[missing]

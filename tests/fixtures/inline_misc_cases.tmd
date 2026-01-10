@@ -1,0 +1,21 @@
+Visit <https://example.com> and <user@example.com>.
+
+Bad <https://example.com path> and <user_at_localhost> and <http://example.com.
+
+AT&amp;T &lt;tag&gt; &#35; &#x23; &quot;ok&quot;.
+
+Symbols &commat; &lpar;&rpar; &AMP;.
+
+Use &unknown; and &amp and &#xZZ; and &#x110000;.
+
+Text <!-- comment --> end.
+
+Text <![CDATA[<tag>]]> end.
+
+Text <!DOCTYPE html> end.
+
+Text <?pi test?> end.
+
+This is <span class="note">raw</span> inline.
+
+Text <!-- not closed

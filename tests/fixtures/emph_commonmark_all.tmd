@@ -1,0 +1,55 @@
+internal emphasis: foo*bar*baz
+no emphasis: foo_bar_baz
+mixed: *foo **bar** baz*
+
+_foo_bar
+
+_foo_bar_baz_
+
+foo__bar__
+
+foo**bar**
+
+** foo bar**
+
+a**"foo"**
+
+__foo, __bar__, baz__
+
+foo-__(bar)__
+
+_(bar)_.
+
+_(_foo_)_
+
+***strong emph***
+
+***strong** in emph*
+
+***emph* in strong**
+
+**in strong *emph***
+
+*in emph **strong***
+
+*emph *with emph* in it*
+
+**strong **with strong** in it**
+
+___strong emph___
+
+___strong__ in emph_
+
+___emph_ in strong__
+
+__in strong _emph___
+
+_in emph __strong___
+
+__strong __with strong__ in it__
+
+*foo _bar* baz_
+
+**foo **bar baz**
+
+*[foo*](bar)

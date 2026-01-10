@@ -1,0 +1,18 @@
+[
+  {
+    "code": "W_REF_MISSING",
+    "severity": "warning",
+    "range": {
+      "start": { "line": 21, "character": 4 },
+      "end": { "line": 21, "character": 21 }
+    }
+  },
+  {
+    "code": "W_REF_MISSING",
+    "severity": "warning",
+    "range": {
+      "start": { "line": 22, "character": 10 },
+      "end": { "line": 22, "character": 27 }
+    }
+  }
+]

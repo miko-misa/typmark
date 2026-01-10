@@ -1,0 +1,35 @@
+{bg="nope" border-width="x" border-style="zig" border-color="#12"}
+::: box Note
+Content.
+:::
+
+```c {hl="1" diff_add="1"}
+line
+```
+
+```c {hl="3"}
+line
+```
+
+Math $a
+b$ here.
+
+{#t}
+# Title
+
+See @t[bad
+text].
+
+{#a}
+::: box @b
+A.
+:::
+
+{#b}
+::: box @a
+B.
+:::
+
+@a
+
+{#orphan}

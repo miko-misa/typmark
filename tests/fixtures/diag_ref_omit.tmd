@@ -1,0 +1,10 @@
+{#p}
+Paragraph.
+
+See @p.
+
+```c {hl="1:printf"}
+printf("hi");
+```
+
+See @printf.

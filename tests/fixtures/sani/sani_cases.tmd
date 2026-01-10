@@ -1,0 +1,5 @@
+A paragraph with a <script>alert("XSS")</script> tag.
+
+And an <b onclick="alert('danger!')">attribute</b>.
+
+And a <u>safe</u> tag.

@@ -1,0 +1,113 @@
+- foo
+- bar
++ baz
+
+[__sep1]: https://example.com
+
+- foo
+-
+- bar
+
+[__sep2]: https://example.com
+
+1. foo
+2.
+3. bar
+
+[__sep3]: https://example.com
+
+Foo
+1.
+bar
+
+[__sep4]: https://example.com
+
+The number of windows in my house is
+1.  The number of doors is 6.
+
+[__sep5]: https://example.com
+
+The number of windows in my house is
+14.  The number of doors is 6.
+
+[__sep6]: https://example.com
+
+-
+  foo
+
+[__sep7]: https://example.com
+
+-
+
+foo
+
+[__sep8]: https://example.com
+
+- foo
+bar
+
+[__sep9]: https://example.com
+
+- Alpha
+
+- Bravo
+
+[__sep10]: https://example.com
+
+- a
+
+  - b
+
+[__sep11]: https://example.com
+
+   - indented
+
+[__sep12]: https://example.com
+
+    - foo
+
+[__sep13]: https://example.com
+
+-	foo
+-	bar
+
+[__sep14]: https://example.com
+
+	- foo
+
+[__sep15]: https://example.com
+
+- a
+ - b
+  - c
+   - d
+  - e
+ - f
+- g
+
+[__sep16]: https://example.com
+
+1. foo
+2. bar
+3) baz
+
+[__sep17]: https://example.com
+
+1.	foo
+    bar
+
+[__sep18]: https://example.com
+
+- Alpha
+- Bravo
+
+[__sep19]: https://example.com
+
+- a
+  - b
+  - c
+
+[__sep20]: https://example.com
+
+* A normal tight item.
+* {#list-id-promo} A tight item with a promoted ID.

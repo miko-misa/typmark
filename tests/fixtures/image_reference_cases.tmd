@@ -1,0 +1,18 @@
+See ![alt text][logo] and ![inline](https://example.com/img.png).
+
+[logo]: https://example.com/logo.png "Logo Title"
+
+See ![shortcut][] and ![Shortcut].
+
+[shortcut]: https://example.com/pic.png
+
+See ![missing][unknown].
+
+See ![alt][ref] in @sec[title].
+
+[ref]: https://example.com/image.png
+
+{#sec}
+# Title
+
+Paragraph.

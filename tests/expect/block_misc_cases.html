@@ -1,0 +1,52 @@
+<blockquote>
+  <p>foo bar</p>
+</blockquote>
+<blockquote>
+  <p>bar baz</p>
+</blockquote>
+<div class="TypMark-box" data-typmark="box">
+  <div class="TypMark-box-body">
+    <p>This is inside the box.</p>
+  </div>
+</div>
+<div class="TypMark-box" data-typmark="box">
+  <div class="TypMark-box-title">Outer</div>
+  <div class="TypMark-box-body">
+    <p>Outer text.</p>
+    <div class="TypMark-box" data-typmark="box">
+      <div class="TypMark-box-title">Inner</div>
+      <div class="TypMark-box-body">
+        <p>Inner text.</p>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="TypMark-box" data-typmark="box">
+  <div class="TypMark-box-title">Note</div>
+  <div class="TypMark-box-body">
+    <p>This is inside the box.</p>
+  </div>
+</div>
+<!-- note -->
+<p>After</p>
+<div>
+Inner
+</div>
+<p>After</p>
+<!DOCTYPE html>
+<p>After</p>
+<script>
+var x = 1;
+</script>
+<p>After</p>
+<p>Alpha <span>Beta</span></p>
+<p>Math <span class="TypMark-math-inline--error">a+b</span> here.</p>
+<div class="TypMark-math-block--error">a+b</div>
+<hr />
+<hr />
+<hr />
+<p>Foo</p>
+<hr />
+<p>bar</p>
+<hr />
+<hr />

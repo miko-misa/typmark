@@ -1,0 +1,15 @@
+{#para}
+Paragraph target.
+
+{#sec}
+# Title with [link](https://example.com) and ![img alt](img.png)
+
+See @sec.
+
+See @para[link: [site](https://example.com) and ![alt](img.png)].
+
+# Heading with [link](https://example.org) and @para[text].
+
+::: box Box [link](https://example.net) and @para[text]
+Body.
+:::

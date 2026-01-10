@@ -1,0 +1,6 @@
+Inline math with no font: $a^2 + b^2 = c^2$
+
+Block math with no font:
+$$
+E = mc^2
+$$

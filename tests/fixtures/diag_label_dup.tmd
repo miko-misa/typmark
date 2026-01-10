@@ -1,0 +1,12 @@
+{#dup}
+Paragraph.
+
+{#dup}
+Paragraph.
+
+{#line_dup}
+Paragraph.
+
+```c {hl="1:line_dup"}
+code
+```

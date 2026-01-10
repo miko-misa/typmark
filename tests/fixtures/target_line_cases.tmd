@@ -1,0 +1,24 @@
+- Lead.
+  {#inside}
+  Item text.
+
+Outside text.
+
+> {#quote}
+> Quote text.
+>
+> Second.
+
+Outside quote.
+
+::: box
+{#boxp}
+Box paragraph.
+
+Second paragraph.
+:::
+
+{#intro}
+# Introduction
+
+Paragraph.

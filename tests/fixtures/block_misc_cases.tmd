@@ -1,0 +1,58 @@
+   > foo
+ > bar
+
+> bar
+baz
+
+::: box
+This is inside the box.
+:::
+
+::: box Outer
+Outer text.
+
+::: box Inner
+Inner text.
+:::
+:::
+
+::: box Note
+This is inside the box.
+:::
+
+<!-- note -->
+After
+
+<div>
+Inner
+</div>
+
+After
+
+<!DOCTYPE html>
+After
+
+<script>
+var x = 1;
+</script>
+After
+
+Alpha
+<span>Beta</span>
+
+Math $a+b$ here.
+
+$$
+a+b
+$$
+
+***
+---
+___
+
+Foo
+***
+bar
+
+ - - -
+**  * ** * ** * **

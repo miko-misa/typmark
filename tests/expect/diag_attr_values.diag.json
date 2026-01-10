@@ -1,0 +1,50 @@
+[
+  {
+    "code": "E_ATTR_SYNTAX",
+    "severity": "error",
+    "range": {
+      "start": { "line": 0, "character": 1 },
+      "end": { "line": 0, "character": 6 }
+    }
+  },
+  {
+    "code": "E_ATTR_SYNTAX",
+    "severity": "error",
+    "range": {
+      "start": { "line": 3, "character": 10 },
+      "end": { "line": 3, "character": 21 }
+    }
+  },
+  {
+    "code": "E_ATTR_SYNTAX",
+    "severity": "error",
+    "range": {
+      "start": { "line": 7, "character": 13 },
+      "end": { "line": 7, "character": 16 }
+    }
+  },
+  {
+    "code": "E_ATTR_SYNTAX",
+    "severity": "error",
+    "range": {
+      "start": { "line": 10, "character": 10 },
+      "end": { "line": 10, "character": 13 }
+    }
+  },
+  {
+    "code": "E_ATTR_SYNTAX",
+    "severity": "error",
+    "range": {
+      "start": { "line": 10, "character": 25 },
+      "end": { "line": 10, "character": 26 }
+    }
+  },
+  {
+    "code": "E_ATTR_SYNTAX",
+    "severity": "error",
+    "range": {
+      "start": { "line": 10, "character": 38 },
+      "end": { "line": 10, "character": 41 }
+    }
+  }
+]
