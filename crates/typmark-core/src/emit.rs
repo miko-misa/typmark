@@ -374,67 +374,88 @@ fn emit_code_block(
     text: &str,
     label: Option<&Label>,
 ) {
-    let lang_attr = lang
-        .map(|value| format!(" data-lang=\"{}\"", escape_attr(value)))
-        .unwrap_or_default();
-    let id = id_attr(label);
-    writer.line(&format!(
-        "<figure class=\"TypMark-codeblock\" data-typmark=\"codeblock\"{}{}>",
-        id, lang_attr
-    ));
-    writer.indent += 1;
-    writer.line("<pre class=\"TypMark-pre\">");
-    writer.indent += 1;
-    let code_class = lang
-        .map(|value| format!("language-{}", escape_attr(value)))
-        .unwrap_or_else(|| "language-".to_string());
-    writer.line(&format!("<code class=\"{}\">", code_class));
-    writer.indent += 1;
+    // Check if this is a simple indented code block (no language, no metadata, no label)
+    let is_simple = lang.is_none()
+        && meta.hl.is_empty()
+        && meta.diff_add.is_empty()
+        && meta.diff_del.is_empty()
+        && meta.line_labels.is_empty()
+        && label.is_none();
 
-    let lines = split_lines_preserve(text);
-    for (idx, line) in lines.iter().enumerate() {
-        let line_no = (idx + 1) as u32;
-        let highlighted = line_in_ranges(line_no, &meta.hl);
-        let diff = if line_in_ranges(line_no, &meta.diff_add) {
-            Some("add")
-        } else if line_in_ranges(line_no, &meta.diff_del) {
-            Some("del")
-        } else {
-            None
-        };
-        let line_label = meta.line_labels.iter().find(|label| label.line == line_no);
+    if is_simple {
+        // Emit simple CommonMark-style pre/code for indented code blocks
+        let escaped = escape_html(text);
+        // Write as single line without indentation for CommonMark compatibility
+        writer.out.push_str("<pre><code>");
+        writer.out.push_str(&escaped);
+        if !escaped.ends_with('\n') {
+            writer.out.push('\n');
+        }
+        writer.out.push_str("</code></pre>\n");
+    } else {
+        // Emit full TypMark-style figure with line wrappers for fenced code blocks with metadata
+        let lang_attr = lang
+            .map(|value| format!(" data-lang=\"{}\"", escape_attr(value)))
+            .unwrap_or_default();
+        let id = id_attr(label);
+        writer.line(&format!(
+            "<figure class=\"TypMark-codeblock\" data-typmark=\"codeblock\"{}{}>",
+            id, lang_attr
+        ));
+        writer.indent += 1;
+        writer.line("<pre class=\"TypMark-pre\">");
+        writer.indent += 1;
+        let code_class = lang
+            .map(|value| format!("language-{}", escape_attr(value)))
+            .unwrap_or_else(|| "language-".to_string());
+        writer.line(&format!("<code class=\"{}\">", code_class));
+        writer.indent += 1;
 
-        let mut class = String::from("line");
-        if highlighted {
-            class.push_str(" highlighted");
+        let lines = split_lines_preserve(text);
+        for (idx, line) in lines.iter().enumerate() {
+            let line_no = (idx + 1) as u32;
+            let highlighted = line_in_ranges(line_no, &meta.hl);
+            let diff = if line_in_ranges(line_no, &meta.diff_add) {
+                Some("add")
+            } else if line_in_ranges(line_no, &meta.diff_del) {
+                Some("del")
+            } else {
+                None
+            };
+            let line_label = meta.line_labels.iter().find(|label| label.line == line_no);
+
+            let mut class = String::from("line");
+            if highlighted {
+                class.push_str(" highlighted");
+            }
+            if let Some(diff_kind) = diff {
+                class.push_str(" diff ");
+                class.push_str(diff_kind);
+            }
+            let mut attrs = format!("class=\"{}\" data-line=\"{}\"", class, line_no);
+            if highlighted {
+                attrs.push_str(" data-highlighted-line");
+            }
+            if let Some(diff_kind) = diff {
+                attrs.push_str(&format!(" data-diff=\"{}\"", diff_kind));
+            }
+            if let Some(label) = line_label {
+                attrs.push_str(&format!(
+                    " id=\"{}\" data-line-label=\"{}\"",
+                    escape_attr(&label.label.name),
+                    escape_attr(&label.label.name)
+                ));
+            }
+            writer.line(&format!("<span {}>{}</span>", attrs, escape_html(line)));
         }
-        if let Some(diff_kind) = diff {
-            class.push_str(" diff ");
-            class.push_str(diff_kind);
-        }
-        let mut attrs = format!("class=\"{}\" data-line=\"{}\"", class, line_no);
-        if highlighted {
-            attrs.push_str(" data-highlighted-line");
-        }
-        if let Some(diff_kind) = diff {
-            attrs.push_str(&format!(" data-diff=\"{}\"", diff_kind));
-        }
-        if let Some(label) = line_label {
-            attrs.push_str(&format!(
-                " id=\"{}\" data-line-label=\"{}\"",
-                escape_attr(&label.label.name),
-                escape_attr(&label.label.name)
-            ));
-        }
-        writer.line(&format!("<span {}>{}</span>", attrs, escape_html(line)));
+
+        writer.indent -= 1;
+        writer.line("</code>");
+        writer.indent -= 1;
+        writer.line("</pre>");
+        writer.indent -= 1;
+        writer.line("</figure>");
     }
-
-    writer.indent -= 1;
-    writer.line("</code>");
-    writer.indent -= 1;
-    writer.line("</pre>");
-    writer.indent -= 1;
-    writer.line("</figure>");
 }
 
 fn render_inlines_with_context(inlines: &[Inline], context: RenderContext) -> String {

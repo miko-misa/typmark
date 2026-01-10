@@ -1982,6 +1982,8 @@ dependencies = [
  "comemo",
  "lru",
  "once_cell",
+ "serde",
+ "serde_json",
  "typst",
  "typst-svg",
 ]
