@@ -6,10 +6,35 @@ use crate::math::render_math;
 use ammonia::Builder;
 use std::collections::{HashMap, HashSet};
 
-/// Emits raw, un-sanitized HTML from a slice of blocks.
+/// Options for HTML emission.
+#[derive(Debug, Clone)]
+pub struct HtmlEmitOptions {
+    /// Whether to wrap sections in `<section>` tags.
+    /// If false, only emits the heading tag (CommonMark-compatible).
+    pub wrap_sections: bool,
+    /// Whether to use simple code block output (just `<pre><code>`).
+    /// If false, uses TypMark's enhanced structure with line spans and figure wrapper.
+    pub simple_code_blocks: bool,
+}
+
+impl Default for HtmlEmitOptions {
+    fn default() -> Self {
+        Self {
+            wrap_sections: true,
+            simple_code_blocks: false,
+        }
+    }
+}
+
+/// Emits raw, un-sanitized HTML from a slice of blocks with default options.
 pub fn emit_html(blocks: &[Block]) -> String {
+    emit_html_with_options(blocks, &HtmlEmitOptions::default())
+}
+
+/// Emits raw, un-sanitized HTML from a slice of blocks with custom options.
+pub fn emit_html_with_options(blocks: &[Block], options: &HtmlEmitOptions) -> String {
     // Deterministic formatting: 2-space indentation and LF newlines.
-    let mut writer = HtmlWriter::new();
+    let mut writer = HtmlWriter::new(options.clone());
     for block in blocks {
         emit_block(&mut writer, block);
     }
@@ -169,6 +194,7 @@ pub fn emit_html_sanitized(blocks: &[Block]) -> String {
 struct HtmlWriter {
     out: String,
     indent: usize,
+    options: HtmlEmitOptions,
 }
 
 #[derive(Clone, Copy)]
@@ -179,10 +205,11 @@ enum RenderContext {
 }
 
 impl HtmlWriter {
-    fn new() -> Self {
+    fn new(options: HtmlEmitOptions) -> Self {
         Self {
             out: String::new(),
             indent: 0,
+            options,
         }
     }
 
@@ -210,21 +237,36 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
             label,
             children,
         } => {
-            let id = id_attr(label.as_ref());
-            writer.line(&format!("<section{}>", id));
-            writer.indent += 1;
-            let heading = format!(
-                "<h{}>{}</h{}>",
-                level,
-                render_inlines_with_context(title, RenderContext::Title),
-                level
-            );
-            writer.line(&heading);
-            for child in children {
-                emit_block(writer, child);
+            if writer.options.wrap_sections {
+                let id = id_attr(label.as_ref());
+                writer.line(&format!("<section{}>", id));
+                writer.indent += 1;
+                let heading = format!(
+                    "<h{}>{}</h{}>",
+                    level,
+                    render_inlines_with_context(title, RenderContext::Title),
+                    level
+                );
+                writer.line(&heading);
+                for child in children {
+                    emit_block(writer, child);
+                }
+                writer.indent -= 1;
+                writer.line("</section>");
+            } else {
+                // CommonMark-compatible: just emit heading without wrapper
+                let id = id_attr(label.as_ref());
+                writer.line(&format!(
+                    "<h{}{}>{}</h{}>",
+                    level,
+                    id,
+                    render_inlines_with_context(title, RenderContext::Title),
+                    level
+                ));
+                for child in children {
+                    emit_block(writer, child);
+                }
             }
-            writer.indent -= 1;
-            writer.line("</section>");
         }
         BlockKind::Heading { level, title } => {
             let id = id_attr(block.attrs.label.as_ref());
@@ -273,31 +315,49 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
             writer.line(&format!("<{}{}{}>", tag, id, start_attr));
             writer.indent += 1;
             for item in items {
-                let mut handled = false;
-                if *tight && item.blocks.len() == 1 {
+                if *tight && !item.blocks.is_empty() {
+                    // In tight lists, unwrap the first paragraph (if any)
                     if let BlockKind::Paragraph { content } = &item.blocks[0].kind {
-                        // This is a single paragraph in a tight list item.
-                        // Promote its ID to the `<li>` tag and render its inlines directly,
-                        // bypassing the normal `emit_block` for the paragraph.
-                        let li_attrs = id_attr(item.blocks[0].attrs.label.as_ref());
-                        writer.line(&format!("<li{}>", li_attrs));
-                        writer.indent += 1;
-                        writer.line(&render_inlines_with_context(content, RenderContext::Normal));
-                        handled = true;
-                    }
-                }
+                        // Render <li> and first paragraph inline without newline
+                        let inline_content =
+                            render_inlines_with_context(content, RenderContext::Normal);
+                        writer.out.push_str(&"  ".repeat(writer.indent));
+                        writer.out.push_str("<li>");
+                        writer.out.push_str(&inline_content);
 
-                if !handled {
-                    // Default case for loose lists, or tight lists with multiple/non-paragraph blocks.
+                        // Render remaining blocks normally
+                        if item.blocks.len() > 1 {
+                            writer.out.push('\n');
+                            writer.indent += 1;
+                            for child in &item.blocks[1..] {
+                                emit_block(writer, child);
+                            }
+                            writer.indent -= 1;
+                            writer.line("</li>");
+                        } else {
+                            // Only one paragraph, close on same line
+                            writer.out.push_str("</li>\n");
+                        }
+                    } else {
+                        // First block is not a paragraph, render all blocks normally
+                        writer.line("<li>");
+                        writer.indent += 1;
+                        for child in &item.blocks {
+                            emit_block(writer, child);
+                        }
+                        writer.indent -= 1;
+                        writer.line("</li>");
+                    }
+                } else {
+                    // Loose list: render all blocks normally (paragraphs get <p> tags)
                     writer.line("<li>");
                     writer.indent += 1;
                     for child in &item.blocks {
                         emit_block(writer, child);
                     }
+                    writer.indent -= 1;
+                    writer.line("</li>");
                 }
-
-                writer.indent -= 1;
-                writer.line("</li>");
             }
             writer.indent -= 1;
             writer.line(&format!("</{}>", tag));
@@ -374,87 +434,101 @@ fn emit_code_block(
     text: &str,
     label: Option<&Label>,
 ) {
-    // Check if this is a simple indented code block (no language, no metadata, no label)
-    let is_simple = lang.is_none()
-        && meta.hl.is_empty()
-        && meta.diff_add.is_empty()
-        && meta.diff_del.is_empty()
-        && meta.line_labels.is_empty()
-        && label.is_none();
-
-    if is_simple {
-        // Emit simple CommonMark-style pre/code for indented code blocks
+    if writer.options.simple_code_blocks {
+        // CommonMark-compatible simple output
         let escaped = escape_html(text);
-        // Write as single line without indentation for CommonMark compatibility
-        writer.out.push_str("<pre><code>");
+        let lang_class = lang
+            .map(|l| format!(" class=\"language-{}\"", escape_attr(l)))
+            .unwrap_or_default();
+        writer.out.push_str(&format!("<pre><code{}>", lang_class));
         writer.out.push_str(&escaped);
         if !escaped.ends_with('\n') {
             writer.out.push('\n');
         }
         writer.out.push_str("</code></pre>\n");
     } else {
-        // Emit full TypMark-style figure with line wrappers for fenced code blocks with metadata
-        let lang_attr = lang
-            .map(|value| format!(" data-lang=\"{}\"", escape_attr(value)))
-            .unwrap_or_default();
-        let id = id_attr(label);
-        writer.line(&format!(
-            "<figure class=\"TypMark-codeblock\" data-typmark=\"codeblock\"{}{}>",
-            id, lang_attr
-        ));
-        writer.indent += 1;
-        writer.line("<pre class=\"TypMark-pre\">");
-        writer.indent += 1;
-        let code_class = lang
-            .map(|value| format!("language-{}", escape_attr(value)))
-            .unwrap_or_else(|| "language-".to_string());
-        writer.line(&format!("<code class=\"{}\">", code_class));
-        writer.indent += 1;
+        // Check if this is a simple indented code block (no language, no metadata, no label)
+        let is_simple = lang.is_none()
+            && meta.hl.is_empty()
+            && meta.diff_add.is_empty()
+            && meta.diff_del.is_empty()
+            && meta.line_labels.is_empty()
+            && label.is_none();
 
-        let lines = split_lines_preserve(text);
-        for (idx, line) in lines.iter().enumerate() {
-            let line_no = (idx + 1) as u32;
-            let highlighted = line_in_ranges(line_no, &meta.hl);
-            let diff = if line_in_ranges(line_no, &meta.diff_add) {
-                Some("add")
-            } else if line_in_ranges(line_no, &meta.diff_del) {
-                Some("del")
-            } else {
-                None
-            };
-            let line_label = meta.line_labels.iter().find(|label| label.line == line_no);
+        if is_simple {
+            // Emit simple CommonMark-style pre/code for indented code blocks
+            let escaped = escape_html(text);
+            // Write as single line without indentation for CommonMark compatibility
+            writer.out.push_str("<pre><code>");
+            writer.out.push_str(&escaped);
+            if !escaped.ends_with('\n') {
+                writer.out.push('\n');
+            }
+            writer.out.push_str("</code></pre>\n");
+        } else {
+            // Emit full TypMark-style figure with line wrappers for fenced code blocks with metadata
+            let lang_attr = lang
+                .map(|value| format!(" data-lang=\"{}\"", escape_attr(value)))
+                .unwrap_or_default();
+            let id = id_attr(label);
+            writer.line(&format!(
+                "<figure class=\"TypMark-codeblock\" data-typmark=\"codeblock\"{}{}>",
+                id, lang_attr
+            ));
+            writer.indent += 1;
+            writer.line("<pre class=\"TypMark-pre\">");
+            writer.indent += 1;
+            let code_class = lang
+                .map(|value| format!("language-{}", escape_attr(value)))
+                .unwrap_or_else(|| "language-".to_string());
+            writer.line(&format!("<code class=\"{}\">", code_class));
+            writer.indent += 1;
 
-            let mut class = String::from("line");
-            if highlighted {
-                class.push_str(" highlighted");
+            let lines = split_lines_preserve(text);
+            for (idx, line) in lines.iter().enumerate() {
+                let line_no = (idx + 1) as u32;
+                let highlighted = line_in_ranges(line_no, &meta.hl);
+                let diff = if line_in_ranges(line_no, &meta.diff_add) {
+                    Some("add")
+                } else if line_in_ranges(line_no, &meta.diff_del) {
+                    Some("del")
+                } else {
+                    None
+                };
+                let line_label = meta.line_labels.iter().find(|label| label.line == line_no);
+
+                let mut class = String::from("line");
+                if highlighted {
+                    class.push_str(" highlighted");
+                }
+                if let Some(diff_kind) = diff {
+                    class.push_str(" diff ");
+                    class.push_str(diff_kind);
+                }
+                let mut attrs = format!("class=\"{}\" data-line=\"{}\"", class, line_no);
+                if highlighted {
+                    attrs.push_str(" data-highlighted-line");
+                }
+                if let Some(diff_kind) = diff {
+                    attrs.push_str(&format!(" data-diff=\"{}\"", diff_kind));
+                }
+                if let Some(label) = line_label {
+                    attrs.push_str(&format!(
+                        " id=\"{}\" data-line-label=\"{}\"",
+                        escape_attr(&label.label.name),
+                        escape_attr(&label.label.name)
+                    ));
+                }
+                writer.line(&format!("<span {}>{}</span>", attrs, escape_html(line)));
             }
-            if let Some(diff_kind) = diff {
-                class.push_str(" diff ");
-                class.push_str(diff_kind);
-            }
-            let mut attrs = format!("class=\"{}\" data-line=\"{}\"", class, line_no);
-            if highlighted {
-                attrs.push_str(" data-highlighted-line");
-            }
-            if let Some(diff_kind) = diff {
-                attrs.push_str(&format!(" data-diff=\"{}\"", diff_kind));
-            }
-            if let Some(label) = line_label {
-                attrs.push_str(&format!(
-                    " id=\"{}\" data-line-label=\"{}\"",
-                    escape_attr(&label.label.name),
-                    escape_attr(&label.label.name)
-                ));
-            }
-            writer.line(&format!("<span {}>{}</span>", attrs, escape_html(line)));
+
+            writer.indent -= 1;
+            writer.line("</code>");
+            writer.indent -= 1;
+            writer.line("</pre>");
+            writer.indent -= 1;
+            writer.line("</figure>");
         }
-
-        writer.indent -= 1;
-        writer.line("</code>");
-        writer.indent -= 1;
-        writer.line("</pre>");
-        writer.indent -= 1;
-        writer.line("</figure>");
     }
 }
 
@@ -477,7 +551,7 @@ fn render_inlines_with_context(inlines: &[Inline], context: RenderContext) -> St
                 }
             },
             InlineKind::SoftBreak => out.push(' '),
-            InlineKind::HardBreak => out.push_str("<br />"),
+            InlineKind::HardBreak => out.push_str("<br />\n"),
             InlineKind::Ref {
                 label,
                 bracket,
@@ -682,6 +756,7 @@ fn escape_html(text: &str) -> String {
             '&' => out.push_str("&amp;"),
             '<' => out.push_str("&lt;"),
             '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
             _ => out.push(ch),
         }
     }

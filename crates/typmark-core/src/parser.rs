@@ -666,7 +666,7 @@ impl Parser {
 
     fn parse_block_quote(&mut self, lines: &[Line], start: usize) -> Option<(Block, usize)> {
         let line = &lines[start];
-        if blockquote_prefix_len(&line.text).is_none() {
+        if blockquote_prefix_info(&line.text).is_none() {
             return None;
         }
         let mut i = start;
@@ -674,11 +674,45 @@ impl Parser {
         let mut can_lazy = false;
         while i < lines.len() {
             let candidate = &lines[i];
-            if let Some(prefix) = blockquote_prefix_len(&candidate.text) {
-                let text = candidate.text[prefix..].to_string();
+            if let Some((prefix_bytes, partially_consumed_tab, remaining_tab_cols, current_col)) =
+                blockquote_prefix_info(&candidate.text)
+            {
+                let mut text = String::new();
+                let mut col = current_col;
+
+                // If we partially consumed a tab, emit the remaining columns as spaces
+                // and skip the tab byte itself
+                let content_start = if partially_consumed_tab {
+                    for _ in 0..remaining_tab_cols {
+                        text.push(' ');
+                        col += 1;
+                    }
+                    prefix_bytes + 1 // Skip the partially consumed tab byte
+                } else {
+                    prefix_bytes
+                };
+
+                // Append the rest of the line, expanding tabs relative to current column
+                let rest = &candidate.text[content_start..];
+                for byte in rest.bytes() {
+                    match byte {
+                        b'\t' => {
+                            let next_tab_stop = col + (4 - (col % 4));
+                            while col < next_tab_stop {
+                                text.push(' ');
+                                col += 1;
+                            }
+                        }
+                        b => {
+                            text.push(b as char);
+                            col += 1;
+                        }
+                    }
+                }
+
                 let line = Line {
                     text,
-                    start: candidate.start + prefix,
+                    start: candidate.start + prefix_bytes,
                     end: candidate.end,
                     has_newline: candidate.has_newline,
                 };
@@ -742,18 +776,9 @@ impl Parser {
             let content_indent = current_marker.content_indent;
             let mut item_lines = Vec::new();
             let mut last_line_idx = i;
-            // For the first line, we need to remove content_indent columns from the entire line
-            // This properly handles tabs that may span the indent boundary
-            let first_text = if indent_prefix_len(&current.text, content_indent).is_some() {
-                remove_indent_columns(&current.text, content_indent)
-            } else {
-                // If we can't find content_indent, just take what's after the marker
-                if marker_len <= current.text.len() {
-                    current.text[marker_len..].to_string()
-                } else {
-                    String::new()
-                }
-            };
+            // For the first line, we need to remove marker + content_indent
+            // This properly handles tabs in list markers
+            let first_text = remove_list_indent(&current.text, marker_len, content_indent);
             let mut seen_content = !first_text.trim().is_empty();
             let mut initial_blank_lines = if seen_content { 0 } else { 1 };
             item_lines.push(Line {
@@ -1979,7 +2004,7 @@ impl Parser {
         &mut self,
         line: &Line,
         _fence_len: usize,
-        info: &str,
+        info: String,
     ) -> (Option<String>, AttrList) {
         if let Some(brace_idx) = info.find('{') {
             let lang_part = info[..brace_idx].trim();
@@ -1997,11 +2022,7 @@ impl Parser {
             let attrs = self.parse_attr_list_text(&line.text[open_idx..=close_idx], base_offset);
             (lang, attrs)
         } else {
-            let lang = if info.is_empty() {
-                None
-            } else {
-                Some(info.to_string())
-            };
+            let lang = if info.is_empty() { None } else { Some(info) };
             (lang, AttrList::default())
         }
     }
@@ -2540,7 +2561,7 @@ fn strip_indent_up_to(text: &str, max_cols: usize) -> Option<&str> {
     Some(&text[idx..])
 }
 
-fn parse_fence_open(text: &str) -> Option<(usize, usize, &str)> {
+fn parse_fence_open(text: &str) -> Option<(usize, usize, String)> {
     let bytes = text.as_bytes();
     let mut idx = 0;
     while idx < bytes.len() && idx < 3 && bytes[idx] == b' ' {
@@ -2561,7 +2582,34 @@ fn parse_fence_open(text: &str) -> Option<(usize, usize, &str)> {
     if info.contains('`') {
         return None;
     }
-    Some((idx, fence_len, info))
+    // Process backslash escapes in info string
+    let info_unescaped = unescape_backslash(info);
+    Some((idx, fence_len, info_unescaped))
+}
+
+/// Processes backslash escapes in text.
+/// According to CommonMark, a backslash before any ASCII punctuation character escapes it.
+fn unescape_backslash(text: &str) -> String {
+    let mut result = String::new();
+    let mut chars = text.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            if let Some(next) = chars.next() {
+                // CommonMark: backslash escapes ASCII punctuation
+                if next.is_ascii_punctuation() {
+                    result.push(next);
+                } else {
+                    result.push('\\');
+                    result.push(next);
+                }
+            } else {
+                result.push('\\');
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+    result
 }
 
 fn is_fence_close(text: &str, fence_len: usize) -> bool {
@@ -2710,25 +2758,71 @@ fn is_space_or_tab(byte: u8) -> bool {
     byte == b' ' || byte == b'\t'
 }
 
-fn blockquote_prefix_len(text: &str) -> Option<usize> {
+/// Returns (prefix_bytes, partially_consumed_tab, remaining_tab_cols, current_col)
+/// where prefix_bytes is the number of bytes to skip,
+/// partially_consumed_tab indicates if a tab was partially consumed,
+/// remaining_tab_cols is the number of columns left in that tab,
+/// and current_col is the column position after the marker and optional space/tab.
+fn blockquote_prefix_info(text: &str) -> Option<(usize, bool, usize, usize)> {
     let bytes = text.as_bytes();
     let mut idx = 0;
+    let mut col = 0;
+
+    // Up to 3 spaces of indentation before '>'
     let mut spaces = 0;
     while idx < bytes.len() && spaces < 3 && bytes[idx] == b' ' {
         idx += 1;
+        col += 1;
         spaces += 1;
     }
+
+    // Cannot have 4+ spaces (that would be code block)
     if idx < bytes.len() && bytes[idx] == b' ' {
         return None;
     }
+
+    // Must have '>' marker
     if idx >= bytes.len() || bytes[idx] != b'>' {
         return None;
     }
     idx += 1;
-    if idx < bytes.len() && (bytes[idx] == b' ' || bytes[idx] == b'\t') {
-        idx += 1;
+    col += 1;
+
+    // Optional: consume one space or tab after '>'
+    // But if it's a tab, we might only partially consume it
+    let mut partially_consumed_tab = false;
+    let mut remaining_tab_cols = 0;
+
+    if idx < bytes.len() {
+        match bytes[idx] {
+            b' ' => {
+                idx += 1;
+                col += 1;
+            }
+            b'\t' => {
+                let chars_to_tab = 4 - (col % 4);
+                if chars_to_tab > 1 {
+                    // Partially consume the tab: advance 1 column, don't advance byte
+                    partially_consumed_tab = true;
+                    remaining_tab_cols = chars_to_tab - 1;
+                    col += 1;
+                } else {
+                    // Consume the entire tab (only 1 column to next tab stop)
+                    idx += 1;
+                    col += 1;
+                }
+            }
+            _ => {
+                // No space/tab after '>', that's fine
+            }
+        }
     }
-    Some(idx)
+
+    Some((idx, partially_consumed_tab, remaining_tab_cols, col))
+}
+
+fn blockquote_prefix_len(text: &str) -> Option<usize> {
+    blockquote_prefix_info(text).map(|(prefix_bytes, _, _, _)| prefix_bytes)
 }
 
 fn parse_html_tag_name(text: &str) -> Option<HtmlTag<'_>> {
@@ -2929,25 +3023,27 @@ fn indent_prefix_len(text: &str, required: usize) -> Option<usize> {
 /// properly handling tabs. Returns the remaining text with tabs expanded to spaces.
 fn remove_indent_columns(text: &str, columns: usize) -> String {
     let bytes = text.as_bytes();
-    let mut col = 0;
+    let mut col = 0; // Column position in the INPUT
     let mut byte_pos = 0;
 
     // Find the byte position where we've consumed `columns` columns
     while byte_pos < bytes.len() && col < columns {
         match bytes[byte_pos] {
-            b' ' => col += 1,
+            b' ' => {
+                col += 1;
+                byte_pos += 1;
+            }
             b'\t' => {
                 let next_col = col + (4 - (col % 4));
                 if next_col > columns {
                     // Tab extends past the indent boundary
-                    // We need to replace it with spaces
                     break;
                 }
                 col = next_col;
+                byte_pos += 1;
             }
             _ => break,
         }
-        byte_pos += 1;
     }
 
     // If we stopped in the middle of a tab, emit spaces for the remaining columns
@@ -2960,23 +3056,101 @@ fn remove_indent_columns(text: &str, columns: usize) -> String {
         for _ in 0..spaces_after_indent {
             result.push(' ');
         }
+        // Update col to the position after the full tab in the input
+        col = tab_end;
         byte_pos += 1;
     }
 
     // Append the rest of the line, expanding any remaining tabs
+    // Tabs expand based on their position in the ORIGINAL input, not the output
     let rest = &text[byte_pos..];
-    let mut current_col = col.saturating_sub(columns);
+
     for ch in rest.chars() {
         if ch == '\t' {
-            let next_tab_stop = current_col + (4 - (current_col % 4));
-            for _ in current_col..next_tab_stop {
+            // This tab is at column `col` in the original input
+            // It should expand to the next multiple of 4 from that position
+            let next_tab_stop = col + (4 - (col % 4));
+            let spaces = next_tab_stop - col;
+            for _ in 0..spaces {
                 result.push(' ');
             }
-            current_col = next_tab_stop;
+            col = next_tab_stop;
         } else {
             result.push(ch);
             if ch != '\r' && ch != '\n' {
-                current_col += 1;
+                col += 1;
+            }
+        }
+    }
+
+    result
+}
+
+fn remove_list_indent(text: &str, _marker_len: usize, content_indent: usize) -> String {
+    // For list items, we need to remove content_indent columns from the entire line.
+    // Key insight from comrak: when we partially consume a tab, we output the remaining
+    // columns as spaces, then expand remaining tabs based on their position in the original input.
+
+    let bytes = text.as_bytes();
+    let mut result = String::new();
+    let mut col = 0; // Column position in the INPUT
+    let mut byte_pos = 0;
+
+    // First pass: skip content_indent columns
+    while byte_pos < bytes.len() && col < content_indent {
+        match bytes[byte_pos] {
+            b' ' => {
+                col += 1;
+                byte_pos += 1;
+            }
+            b'\t' => {
+                let next_col = col + (4 - (col % 4));
+                if next_col > content_indent {
+                    // Partial tab - will handle below
+                    break;
+                }
+                col = next_col;
+                byte_pos += 1;
+            }
+            _ => {
+                // Non-whitespace character (e.g., list marker)
+                col += 1;
+                byte_pos += 1;
+            }
+        }
+    }
+
+    // Handle partial tab: output remaining columns as spaces, skip the tab byte
+    if col < content_indent && byte_pos < bytes.len() && bytes[byte_pos] == b'\t' {
+        let tab_end = col + (4 - (col % 4));
+        let spaces_after_indent = tab_end - content_indent;
+
+        for _ in 0..spaces_after_indent {
+            result.push(' ');
+        }
+        // Update col to the position after the full tab in the input
+        col = tab_end;
+        byte_pos += 1;
+    }
+
+    // Second pass: append the rest of the line, expanding tabs based on their position
+    // in the ORIGINAL input, not the output
+    if byte_pos < bytes.len() {
+        for ch in text[byte_pos..].chars() {
+            if ch == '\t' {
+                // This tab is at column `col` in the original input
+                // It should expand to the next multiple of 4 from that position
+                let next_tab_stop = col + (4 - (col % 4));
+                let spaces = next_tab_stop - col;
+                for _ in 0..spaces {
+                    result.push(' ');
+                }
+                col = next_tab_stop;
+            } else {
+                result.push(ch);
+                if ch != '\r' && ch != '\n' {
+                    col += 1;
+                }
             }
         }
     }
@@ -3010,18 +3184,27 @@ fn parse_list_marker(text: &str) -> Option<ListMarker> {
             let marker_width = 1;
             idx += 1;
             let start_col = indent_cols + marker_width;
-            let (post_cols, post_bytes, content_ws_bytes, has_nonspace) =
+            let (post_cols, post_bytes, content_ws_bytes, content_cols, has_nonspace) =
                 scan_post_marker(bytes, idx, start_col);
             if post_cols == 0 && has_nonspace {
                 return None;
             }
             let empty_item = !has_nonspace;
-            let content_indent =
-                indent_cols + marker_width + if empty_item { 1 } else { post_cols.min(4) };
-            let marker_len = if empty_item {
-                marker_pos + marker_width + post_bytes
+
+            // If content_cols == 0 and not empty, use fallback: padding = marker + 1
+            let (content_indent, marker_len) = if empty_item {
+                (
+                    indent_cols + marker_width + 1,
+                    marker_pos + marker_width + post_bytes,
+                )
+            } else if content_cols == 0 {
+                // Fallback: too much whitespace (>4 cols)
+                (indent_cols + marker_width + 1, marker_pos + marker_width)
             } else {
-                marker_pos + marker_width + content_ws_bytes
+                (
+                    indent_cols + marker_width + content_cols,
+                    marker_pos + marker_width + content_ws_bytes,
+                )
             };
             return Some(ListMarker {
                 ordered: false,
@@ -3050,17 +3233,24 @@ fn parse_list_marker(text: &str) -> Option<ListMarker> {
     let marker_width = marker_end - digit_start;
     idx = marker_end;
     let start_col = indent_cols + marker_width;
-    let (post_cols, post_bytes, content_ws_bytes, has_nonspace) =
+    let (post_cols, post_bytes, content_ws_bytes, content_cols, has_nonspace) =
         scan_post_marker(bytes, idx, start_col);
     if post_cols == 0 && has_nonspace {
         return None;
     }
     let empty_item = !has_nonspace;
-    let content_indent = indent_cols + marker_width + if empty_item { 1 } else { post_cols.min(4) };
-    let marker_len = if empty_item {
-        marker_end + post_bytes
+
+    // If content_cols == 0 and not empty, use fallback: padding = marker + 1
+    let (content_indent, marker_len) = if empty_item {
+        (indent_cols + marker_width + 1, marker_end + post_bytes)
+    } else if content_cols == 0 {
+        // Fallback: too much whitespace (>4 cols)
+        (indent_cols + marker_width + 1, marker_end)
     } else {
-        marker_end + content_ws_bytes
+        (
+            indent_cols + marker_width + content_cols,
+            marker_end + content_ws_bytes,
+        )
     };
     let start_num = text[digit_start..digit_start + digits_len]
         .parse::<u64>()
@@ -3075,32 +3265,117 @@ fn parse_list_marker(text: &str) -> Option<ListMarker> {
     })
 }
 
-fn scan_post_marker(bytes: &[u8], start: usize, start_col: usize) -> (usize, usize, usize, bool) {
+fn scan_post_marker(
+    bytes: &[u8],
+    start: usize,
+    start_col: usize,
+) -> (usize, usize, usize, usize, bool) {
     let mut idx = start;
     let mut col = start_col;
-    let mut bytes_len = 0;
-    let mut content_bytes = 0;
-    let mut content_done = false;
-    while idx < bytes.len() {
-        let next_col = match advance_column(col, bytes[idx]) {
-            Some(next) => next,
-            None => break,
-        };
-        col = next_col;
-        bytes_len += 1;
-        if !content_done {
-            content_bytes = bytes_len;
-            if col - start_col >= 4 {
-                content_done = true;
+    let mut tab_remainder = 0; // Remaining columns in a partially consumed tab
+
+    // Advance column by column, up to 5 columns
+    // The key insight: we track tab remainder to avoid re-processing the same tab byte
+    while col - start_col < 5 && idx < bytes.len() {
+        if tab_remainder > 0 {
+            // We're in the middle of a tab - consume one more column from it
+            tab_remainder -= 1;
+            col += 1;
+            if tab_remainder == 0 {
+                // Tab fully consumed, advance to next byte
+                idx += 1;
+            }
+        } else {
+            match bytes[idx] {
+                b' ' => {
+                    col += 1;
+                    idx += 1;
+                }
+                b'\t' => {
+                    let chars_to_tab = 4 - (col % 4);
+                    // Consume 1 column from this tab
+                    col += 1;
+                    if chars_to_tab > 1 {
+                        // Tab not fully consumed - set remainder
+                        tab_remainder = chars_to_tab - 1;
+                    } else {
+                        // Tab fully consumed in one column
+                        idx += 1;
+                    }
+                }
+                _ => break, // Non-whitespace
             }
         }
-        idx += 1;
     }
-    let has_nonspace = idx < bytes.len();
+
+    let i = col - start_col;
+    let total_cols = i;
+    let total_bytes = idx - start;
+
+    // Scan ahead to check if there's non-whitespace content
+    let mut has_nonspace = false;
+    let mut scan_idx = idx;
+    let mut scan_tab_remainder = tab_remainder;
+
+    while scan_idx < bytes.len() {
+        if scan_tab_remainder > 0 {
+            scan_tab_remainder -= 1;
+            if scan_tab_remainder == 0 {
+                scan_idx += 1;
+            }
+        } else {
+            match bytes[scan_idx] {
+                b' ' => scan_idx += 1,
+                b'\t' => {
+                    // Just skip the entire tab for this scan
+                    scan_idx += 1;
+                }
+                _ => {
+                    has_nonspace = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    // Check if i (columns advanced) is in valid range [1, 4]
+    if i == 0 || i > 4 {
+        return (total_cols, total_bytes, 0, 0, has_nonspace);
+    }
+
+    // Valid range: calculate content_bytes for the i columns
+    // This is the number of bytes that represent exactly i columns
+    let content_cols = i;
+    let mut temp_col = start_col;
+    let mut temp_idx = start;
+
+    while temp_col < start_col + content_cols && temp_idx < bytes.len() {
+        match bytes[temp_idx] {
+            b' ' => {
+                temp_col += 1;
+                temp_idx += 1;
+            }
+            b'\t' => {
+                let next_col = temp_col + (4 - (temp_col % 4));
+                if next_col <= start_col + content_cols {
+                    temp_col = next_col;
+                    temp_idx += 1;
+                } else {
+                    // Partial tab - this byte is NOT fully consumed
+                    break;
+                }
+            }
+            _ => break,
+        }
+    }
+
+    let content_bytes = temp_idx - start;
+
     (
-        col.saturating_sub(start_col),
-        bytes_len,
+        total_cols,
+        total_bytes,
         content_bytes,
+        content_cols,
         has_nonspace,
     )
 }
@@ -3908,7 +4183,12 @@ fn decode_entity(bytes: &[u8], start: usize, end: usize) -> Option<(Vec<u8>, usi
             Err(_) => return None,
         };
         let value = u32::from_str_radix(number_str, radix).ok()?;
-        let ch = std::char::from_u32(value)?;
+        // CommonMark: invalid codepoints (0, surrogates, > 0x10FFFF) -> U+FFFD (replacement char)
+        let ch = if value == 0 || (value >= 0xD800 && value <= 0xDFFF) || value > 0x10FFFF {
+            '\u{FFFD}'
+        } else {
+            std::char::from_u32(value).unwrap_or('\u{FFFD}')
+        };
         let mut out = [0u8; 4];
         let encoded = ch.encode_utf8(&mut out);
         return Some((encoded.as_bytes().to_vec(), i + 1));

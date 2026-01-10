@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use std::fs;
 use std::path::Path;
-use typmark_core::{emit_html, parse, resolve};
+use typmark_core::{HtmlEmitOptions, emit_html_with_options, parse, resolve};
 
 #[derive(Debug, Deserialize)]
 struct SpecExample {
@@ -55,7 +55,13 @@ fn commonmark_spec() {
             parsed.diagnostics,
             &parsed.link_defs,
         );
-        let actual_html = emit_html(&resolved.document.blocks);
+
+        // Use CommonMark-compatible mode (no section wrappers, simple code blocks)
+        let options = HtmlEmitOptions {
+            wrap_sections: false,
+            simple_code_blocks: true,
+        };
+        let actual_html = emit_html_with_options(&resolved.document.blocks, &options);
 
         let actual_normalized = normalize_html(&actual_html);
         let expected_normalized = normalize_html(&example.html);
