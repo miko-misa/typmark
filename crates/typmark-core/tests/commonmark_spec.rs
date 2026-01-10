@@ -90,9 +90,9 @@ fn commonmark_spec() {
     println!("Pass rate: {:.1}%", pass_rate);
     println!("=====================================\n");
 
-    if !failures.is_empty() && failed <= 10 {
-        println!("Failed examples:");
-        for failure in &failures {
+    if !failures.is_empty() {
+        println!("\nFirst 3 failed examples (detailed):");
+        for failure in failures.iter().take(3) {
             println!(
                 "\n--- Example {} (line {}) ---",
                 failure.example_num, failure.start_line
@@ -102,9 +102,9 @@ fn commonmark_spec() {
             println!("\nExpected HTML:\n{}", show_whitespace(&failure.expected));
             println!("\nActual HTML:\n{}", show_whitespace(&failure.actual));
         }
-    } else if !failures.is_empty() {
-        println!("\nToo many failures to display. First 10:");
-        for failure in failures.iter().take(10) {
+
+        println!("\n\nNext 7 failures (summary):");
+        for failure in failures.iter().skip(3).take(7) {
             println!(
                 "  Example {} ({}): {}",
                 failure.example_num, failure.start_line, failure.section

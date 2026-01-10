@@ -408,7 +408,7 @@ impl Parser {
 
     fn parse_indented_code_block(&self, lines: &[Line], start: usize) -> Option<(Block, usize)> {
         let line = &lines[start];
-        let _prefix_len = indent_prefix_len(&line.text, 4)?;
+        indent_prefix_len(&line.text, 4)?;
         let mut code_lines: Vec<String> = Vec::new();
         let mut pending_blank: Vec<usize> = Vec::new();
         let mut i = start;
@@ -421,16 +421,16 @@ impl Parser {
                 i += 1;
                 continue;
             }
-            let current_prefix = match indent_prefix_len(&current.text, 4) {
-                Some(prefix) => prefix,
-                None => break,
-            };
+            if indent_prefix_len(&current.text, 4).is_none() {
+                break;
+            }
             if !pending_blank.is_empty() {
                 for _ in pending_blank.drain(..) {
                     code_lines.push(String::new());
                 }
             }
-            let content = current.text[current_prefix..].to_string();
+            // Remove 4 columns of indentation, properly handling tabs
+            let content = remove_indent_columns(&current.text, 4);
             code_lines.push(content);
             last_line_idx = i;
             i += 1;
@@ -2914,6 +2914,65 @@ fn indent_prefix_len(text: &str, required: usize) -> Option<usize> {
         }
     }
     None
+}
+
+/// Remove up to `columns` columns of indentation from the start of a line,
+/// properly handling tabs. Returns the remaining text with tabs expanded to spaces.
+fn remove_indent_columns(text: &str, columns: usize) -> String {
+    let bytes = text.as_bytes();
+    let mut col = 0;
+    let mut byte_pos = 0;
+
+    // Find the byte position where we've consumed `columns` columns
+    while byte_pos < bytes.len() && col < columns {
+        match bytes[byte_pos] {
+            b' ' => col += 1,
+            b'\t' => {
+                let next_col = col + (4 - (col % 4));
+                if next_col > columns {
+                    // Tab extends past the indent boundary
+                    // We need to replace it with spaces
+                    break;
+                }
+                col = next_col;
+            }
+            _ => break,
+        }
+        byte_pos += 1;
+    }
+
+    // If we stopped in the middle of a tab, emit spaces for the remaining columns
+    let mut result = String::new();
+    if col < columns && byte_pos < bytes.len() && bytes[byte_pos] == b'\t' {
+        // Partial tab - emit the spaces that come after removing the indent
+        let tab_start = col;
+        let tab_end = tab_start + (4 - (tab_start % 4));
+        let spaces_after_indent = tab_end - columns;
+        for _ in 0..spaces_after_indent {
+            result.push(' ');
+        }
+        byte_pos += 1;
+    }
+
+    // Append the rest of the line, expanding any remaining tabs
+    let rest = &text[byte_pos..];
+    let mut current_col = col.saturating_sub(columns);
+    for ch in rest.chars() {
+        if ch == '\t' {
+            let next_tab_stop = current_col + (4 - (current_col % 4));
+            for _ in current_col..next_tab_stop {
+                result.push(' ');
+            }
+            current_col = next_tab_stop;
+        } else {
+            result.push(ch);
+            if ch != '\r' && ch != '\n' {
+                current_col += 1;
+            }
+        }
+    }
+
+    result
 }
 
 fn parse_list_marker(text: &str) -> Option<ListMarker> {
