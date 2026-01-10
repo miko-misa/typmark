@@ -2582,9 +2582,10 @@ fn parse_fence_open(text: &str) -> Option<(usize, usize, String)> {
     if info.contains('`') {
         return None;
     }
-    // Process backslash escapes in info string
+    // Process backslash escapes and entities in info string
     let info_unescaped = unescape_backslash(info);
-    Some((idx, fence_len, info_unescaped))
+    let info_decoded = decode_entities_in_string(&info_unescaped);
+    Some((idx, fence_len, info_decoded))
 }
 
 /// Processes backslash escapes in text.
@@ -3647,6 +3648,8 @@ fn parse_link_title(bytes: &[u8], start: usize, end: usize) -> Option<(String, u
                 Ok(value) => value,
                 Err(err) => String::from_utf8_lossy(&err.into_bytes()).to_string(),
             };
+            // Decode entities in title
+            let title = decode_entities_in_string(&title);
             return Some((title, i + 1));
         }
         out.push(b);
@@ -3759,6 +3762,9 @@ fn parse_inline_link_destination(
         Ok(value) => value,
         Err(err) => String::from_utf8_lossy(&err.into_bytes()).to_string(),
     };
+    // Decode entities in URL and apply percent-encoding
+    let url = decode_entities_in_string(&url);
+    let url = percent_encode_url(&url);
 
     let mut had_space = false;
     while i < end && bytes[i].is_ascii_whitespace() {
@@ -3869,7 +3875,8 @@ fn parse_link_reference_definition_lines(
             if !trailing_spaces_tabs_only(&lines[title_end_line].text, title_end_pos) {
                 return None;
             }
-            title = Some(parsed);
+            // Decode entities in title
+            title = Some(decode_entities_in_string(&parsed));
             end_line_idx = title_end_line;
         } else {
             return None;
@@ -3886,7 +3893,8 @@ fn parse_link_reference_definition_lines(
                     if !trailing_spaces_tabs_only(&lines[title_end_line].text, title_end_pos) {
                         return None;
                     }
-                    title = Some(parsed);
+                    // Decode entities in title
+                    title = Some(decode_entities_in_string(&parsed));
                     end_line_idx = title_end_line;
                 }
             }
@@ -4100,6 +4108,9 @@ fn parse_reference_destination(bytes: &[u8], start: usize, end: usize) -> Option
         Ok(value) => value,
         Err(err) => String::from_utf8_lossy(&err.into_bytes()).to_string(),
     };
+    // Decode entities in URL and apply percent-encoding
+    let url = decode_entities_in_string(&url);
+    let url = percent_encode_url(&url);
     Some((url, i))
 }
 
@@ -4182,6 +4193,12 @@ fn decode_entity(bytes: &[u8], start: usize, end: usize) -> Option<(Vec<u8>, usi
             Ok(value) => value,
             Err(_) => return None,
         };
+        // CommonMark: reject numeric references with too many digits
+        // Max 7 digits for decimal, 6 for hex (to stay within valid Unicode range)
+        let max_digits = if radix == 16 { 6 } else { 7 };
+        if number_str.len() > max_digits {
+            return None;
+        }
         let value = u32::from_str_radix(number_str, radix).ok()?;
         // CommonMark: invalid codepoints (0, surrogates, > 0x10FFFF) -> U+FFFD (replacement char)
         let ch = if value == 0 || (value >= 0xD800 && value <= 0xDFFF) || value > 0x10FFFF {
@@ -4204,6 +4221,49 @@ fn decode_entity(bytes: &[u8], start: usize, end: usize) -> Option<(Vec<u8>, usi
     let name_str = std::str::from_utf8(name).ok()?;
     let decoded = lookup_named_entity(name_str)?;
     Some((decoded.as_bytes().to_vec(), i + 1))
+}
+
+/// Decode all entities in a string (for use in link URLs, titles, and code info strings)
+fn decode_entities_in_string(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut result = String::new();
+    let mut i = 0;
+
+    while i < bytes.len() {
+        if bytes[i] == b'&' {
+            if let Some((decoded, next)) = decode_entity(bytes, i, bytes.len()) {
+                result.push_str(std::str::from_utf8(&decoded).unwrap_or(""));
+                i = next;
+                continue;
+            }
+        }
+        result.push(bytes[i] as char);
+        i += 1;
+    }
+
+    result
+}
+
+/// Percent-encode non-ASCII characters in URL (CommonMark requirement)
+fn percent_encode_url(url: &str) -> String {
+    let mut result = String::new();
+    for ch in url.chars() {
+        if ch.is_ascii()
+            && !matches!(
+                ch,
+                ' ' | '<' | '>' | '"' | '{' | '}' | '|' | '\\' | '^' | '`'
+            )
+        {
+            result.push(ch);
+        } else {
+            let mut buf = [0u8; 4];
+            let encoded = ch.encode_utf8(&mut buf);
+            for &byte in encoded.as_bytes() {
+                result.push_str(&format!("%{:02X}", byte));
+            }
+        }
+    }
+    result
 }
 
 fn is_autolink_scheme(value: &str) -> bool {
