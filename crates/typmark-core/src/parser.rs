@@ -742,10 +742,17 @@ impl Parser {
             let content_indent = current_marker.content_indent;
             let mut item_lines = Vec::new();
             let mut last_line_idx = i;
-            let first_text = if marker_len <= current.text.len() {
-                current.text[marker_len..].to_string()
+            // For the first line, we need to remove content_indent columns from the entire line
+            // This properly handles tabs that may span the indent boundary
+            let first_text = if indent_prefix_len(&current.text, content_indent).is_some() {
+                remove_indent_columns(&current.text, content_indent)
             } else {
-                String::new()
+                // If we can't find content_indent, just take what's after the marker
+                if marker_len <= current.text.len() {
+                    current.text[marker_len..].to_string()
+                } else {
+                    String::new()
+                }
             };
             let mut seen_content = !first_text.trim().is_empty();
             let mut initial_blank_lines = if seen_content { 0 } else { 1 };
@@ -773,7 +780,7 @@ impl Parser {
                     j += 1;
                     continue;
                 }
-                if let Some(prefix_len) = indent_prefix_len(&next.text, content_indent) {
+                if indent_prefix_len(&next.text, content_indent).is_some() {
                     if !pending_blank.is_empty() {
                         for blank in pending_blank.drain(..) {
                             item_lines.push(Line {
@@ -784,9 +791,11 @@ impl Parser {
                             });
                         }
                     }
+                    // Use remove_indent_columns to properly expand tabs
+                    let content_text = remove_indent_columns(&next.text, content_indent);
                     item_lines.push(Line {
-                        text: next.text[prefix_len..].to_string(),
-                        start: next.start + prefix_len,
+                        text: content_text,
+                        start: next.start,
                         end: next.end,
                         has_newline: next.has_newline,
                     });
