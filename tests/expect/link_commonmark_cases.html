@@ -2,7 +2,9 @@
 <p><a href="my%20uri">inline-angle</a></p>
 <p><a href="foo(bar(baz))">inline-nest</a></p>
 <p><a href="/%CF%86%CE%BF%CF%85">inline-unicode</a></p>
-<p><a href="/foo">coll-foo</a> and <a href="/bar">coll-bar</a></p>
+<p>[coll-foo][] and [coll-bar]
+[coll-foo]: /foo
+[coll-bar]: /bar</p>
 <p><a href="">ref-empty</a></p>
 <p><a href="my%20uri">ref-angle</a></p>
 <p><a href="/url">αγω</a></p>
@@ -10,14 +12,15 @@
 <p><a href="/url%5Cbar*baz" title="foo&quot;bar\baz">ref-esc</a></p>
 <p>[ref-nospace]: <bar>(baz)</p>
 <p>[ref-nospace]</p>
-<p>[ref-trail]: /url "title" ok</p>
+<p>[ref-trail]: /url &quot;title&quot; ok</p>
 <p>bar</p>
 <p><a href="/url">indent3</a></p>
 <pre><code>[indent4]: /url
 </code></pre>
 <p>[indent4]</p>
 <p><a href="/url">ml-dest</a></p>
-<p><a href="/url" title="title">ml-title</a></p>
+<p>&quot;title&quot;</p>
+<p><a href="/url">ml-title</a></p>
 <p><a href="/url" title="
 title
 line1

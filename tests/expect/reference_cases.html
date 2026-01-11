@@ -1,7 +1,11 @@
-<p>See <a href="https://example.com" title="Example">site</a> and <a href="https://example.org">shortcut</a>.</p>
+<p>See [site][home] and [shortcut].
+[home]: https://example.com &quot;Example&quot;
+[shortcut]: https://example.org</p>
 <p>See <a href="https://example.com">site</a>.</p>
-<p>See <a href="https://example.com" title="Title">Text</a> and <a href="https://example.com" title="Title">My Label</a> and <a href="https://example.com" title="Title">my label</a>.</p>
-<p>See <a href="https://example.com">text</a>.</p>
+<p>See [Text][My   Label] and [My Label][] and [my label].
+[my label]: <a href="https://example.com">https://example.com</a> 'Title'</p>
+<p>See [text][x\y].
+[x\y]: https://example.com</p>
 <p>See [missing][label] and [unknown].</p>
 <section id="t">
   <h1>Title</h1>
@@ -9,5 +13,5 @@
   <p>See <span class="TypMark-ref ref-unresolved" data-ref-label="missing">missing</span>.</p>
 </section>
 <section>
-  <h1>Heading <span class="TypMark-delink ref-unresolved" data-ref-label="missing">missing</span></h1>
+  <h1>Heading <span class="TypMark-ref ref-unresolved" data-ref-label="missing">missing</span></h1>
 </section>
