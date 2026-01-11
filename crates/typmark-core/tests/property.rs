@@ -39,7 +39,11 @@ fn spans_are_in_bounds_on_random_input() -> Result<(), Box<dyn std::error::Error
             &parsed.link_defs,
         );
         if let Err(message) = check_document_spans(&resolved.document, source.len()) {
-            return Err(format!("span check failed for case {}: {}", case, message).into());
+            return Err(format!(
+                "span check failed for case {}: {}\nSource:\n---\n{}\n---",
+                case, message, source
+            )
+            .into());
         }
     }
     Ok(())

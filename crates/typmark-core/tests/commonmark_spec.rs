@@ -9,7 +9,6 @@ struct SpecExample {
     html: String,
     example: u32,
     start_line: u32,
-    end_line: u32,
     section: String,
 }
 
@@ -123,6 +122,7 @@ fn commonmark_spec() {
         for failure in &failures {
             *sections.entry(failure.section.clone()).or_insert(0) += 1;
         }
+
         let mut section_vec: Vec<_> = sections.iter().collect();
         section_vec.sort_by_key(|(_, count)| std::cmp::Reverse(**count));
         for (section, count) in section_vec {
