@@ -2122,7 +2122,7 @@ impl Parser {
         let opener_remain = opener.len.saturating_sub(use_len);
         let closer_remain = closer.len.saturating_sub(use_len);
         let mut replacement = Vec::new();
-        // Opener残余
+        // Remaining opener text.
         if opener_remain > 0 {
             let span = Span {
                 start: opener_node.span.start,
@@ -2137,7 +2137,7 @@ impl Parser {
             });
         }
 
-        // 強調本体
+        // Emphasis node.
         let emph_span = Span {
             start: opener_node.span.start + opener_remain,
             end: closer_node.span.end.saturating_sub(closer_remain),
@@ -2152,7 +2152,7 @@ impl Parser {
             kind: emph_kind,
         });
 
-        // Closer残余
+        // Remaining closer text.
         if closer_remain > 0 {
             let span = Span {
                 start: closer_node.span.end.saturating_sub(closer_remain),
@@ -4317,38 +4317,38 @@ fn parse_link_reference_definition_lines(
     let mut title = None;
     let mut end_line_idx = line_idx;
 
-    // 1. タイトルが同一行にある場合
+    // 1. Title on the same line.
     if pos < lines[line_idx].text.len() {
         let first = dest_bytes[pos];
         if is_title_delim(first) {
             if !had_space_after_dest {
-                // タイトル区切りの直前にスペース/タブがなければタイトル不可
+                // Title delimiter must be preceded by a space or tab.
                 return None;
             }
             let (parsed, title_end_line, title_end_pos) =
                 parse_link_title_multiline(lines, line_idx, pos)?;
-            // タイトル直後がスペース/タブ/行末のみならタイトルとして認める
+            // Title is accepted when only spaces/tabs or end-of-line follow.
             if trailing_spaces_tabs_only(&lines[title_end_line].text, title_end_pos) {
                 title = Some(unescape_and_decode(&parsed));
                 end_line_idx = title_end_line;
             } else {
-                // タイトル直後に他の文字があればタイトル不可 -> 定義全体が無効
+                // Non-whitespace after the title invalidates the definition.
                 return None;
             }
         } else {
-            // タイトル区切りでなければタイトルなし
+            // Not a title delimiter: no title.
         }
     } else {
-        // 2. タイトルが次行にある場合
+        // 2. Title on the next line.
         let peek_idx = line_idx + 1;
         if peek_idx < lines.len() {
             let peek_pos = skip_spaces_tabs(&lines[peek_idx].text, 0);
             if peek_pos < lines[peek_idx].text.len() {
                 let first = lines[peek_idx].text.as_bytes()[peek_pos];
                 if is_title_delim(first) {
-                    // 同一行にdestinationがある場合、次行タイトルは先頭にスペース/タブが必要
+                    // If destination is on the same line, next-line titles must be indented.
                     if !dest_on_new_line && peek_pos == 0 {
-                        // タイトルとしては扱わず、定義はdestinationのみで確定
+                        // Treat as destination-only definition (no title).
                         return Some((
                             label,
                             LinkDefinition { url, title: None },
@@ -4357,12 +4357,12 @@ fn parse_link_reference_definition_lines(
                     }
                     let (parsed, title_end_line, title_end_pos) =
                         parse_link_title_multiline(lines, peek_idx, peek_pos)?;
-                    // タイトル直後がスペース/タブ/行末のみならタイトルとして認める
+                    // Title is accepted when only spaces/tabs or end-of-line follow.
                     if trailing_spaces_tabs_only(&lines[title_end_line].text, title_end_pos) {
                         title = Some(unescape_and_decode(&parsed));
                         end_line_idx = title_end_line;
                     } else {
-                        // タイトル直後に他の文字があればタイトル不可 -> 定義全体が無効
+                        // Non-whitespace after the title invalidates the definition.
                         return None;
                     }
                 }
