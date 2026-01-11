@@ -8,6 +8,7 @@ use crate::diagnostic::{
     E_REF_BRACKET_NL, E_TARGET_ORPHAN, W_BOX_STYLE_INVALID, W_CODE_RANGE_OOB,
 };
 use crate::entities::lookup_named_entity;
+use crate::label::{is_label_escape, normalize_link_label};
 use crate::source_map::SourceMap;
 use crate::span::Span;
 use std::collections::HashMap;
@@ -20,7 +21,10 @@ pub struct ParseResult {
 }
 
 pub fn parse(source: &str) -> ParseResult {
+    let mut prepass = Parser::new(source);
+    let _ = prepass.parse_document_with_mode(false);
     let mut parser = Parser::new(source);
+    parser.link_defs = prepass.link_defs;
     let document = parser.parse_document();
     ParseResult {
         document,
@@ -44,6 +48,7 @@ struct Line {
     start: usize,
     end: usize,
     has_newline: bool,
+    lazy_continuation: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -53,6 +58,8 @@ struct Delimiter {
     node_index: usize,
     can_open: bool,
     can_close: bool,
+    orig_can_open: bool,
+    orig_can_close: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -77,17 +84,21 @@ impl Parser {
     }
 
     fn parse_document(&mut self) -> Document {
+        self.parse_document_with_mode(true)
+    }
+
+    fn parse_document_with_mode(&mut self, parse_inlines: bool) -> Document {
         let span = Span {
             start: 0,
             end: self.source.len(),
         };
         // Phase 0: line-based block parsing with a minimal block set.
         let lines = self.lines.clone();
-        let blocks = self.parse_blocks(&lines);
+        let blocks = self.parse_blocks(&lines, parse_inlines);
         Document { span, blocks }
     }
 
-    fn parse_blocks(&mut self, lines: &[Line]) -> Vec<Block> {
+    fn parse_blocks(&mut self, lines: &[Line], parse_inlines: bool) -> Vec<Block> {
         let mut blocks = Vec::new();
         let mut i = 0;
         // Target-line attributes are scoped to the current container only.
@@ -140,7 +151,7 @@ impl Parser {
                 continue;
             }
 
-            if let Some((block, next)) = self.parse_box_block(lines, i) {
+            if let Some((block, next)) = self.parse_box_block(lines, i, parse_inlines) {
                 let mut block = block;
                 self.finalize_block(&mut block, &mut pending_attrs);
                 blocks.push(block);
@@ -164,7 +175,7 @@ impl Parser {
                 continue;
             }
 
-            if let Some((block, next)) = self.parse_block_quote(lines, i) {
+            if let Some((block, next)) = self.parse_block_quote(lines, i, parse_inlines) {
                 let mut block = block;
                 self.finalize_block(&mut block, &mut pending_attrs);
                 blocks.push(block);
@@ -172,7 +183,7 @@ impl Parser {
                 continue;
             }
 
-            if let Some((block, next)) = self.parse_list(lines, i) {
+            if let Some((block, next)) = self.parse_list(lines, i, parse_inlines) {
                 let mut block = block;
                 self.finalize_block(&mut block, &mut pending_attrs);
                 blocks.push(block);
@@ -180,7 +191,7 @@ impl Parser {
                 continue;
             }
 
-            if let Some((block, next)) = self.parse_heading(lines, i) {
+            if let Some((block, next)) = self.parse_heading(lines, i, parse_inlines) {
                 let mut block = block;
                 self.finalize_block(&mut block, &mut pending_attrs);
                 blocks.push(block);
@@ -188,7 +199,7 @@ impl Parser {
                 continue;
             }
 
-            let (block, next) = self.parse_paragraph(lines, i);
+            let (block, next) = self.parse_paragraph(lines, i, parse_inlines);
             if let Some(mut block) = block {
                 self.finalize_block(&mut block, &mut pending_attrs);
                 blocks.push(block);
@@ -240,11 +251,20 @@ impl Parser {
         }
     }
 
-    fn parse_heading(&mut self, lines: &[Line], i: usize) -> Option<(Block, usize)> {
+    fn parse_heading(
+        &mut self,
+        lines: &[Line],
+        i: usize,
+        parse_inlines: bool,
+    ) -> Option<(Block, usize)> {
         let line = &lines[i];
         let (level, content_start, content_end) = parse_atx_heading(&line.text)?;
         let rest = &line.text[content_start..content_end];
-        let title = self.parse_inline(rest, line.start + content_start);
+        let title = if parse_inlines {
+            self.parse_inline(rest, line.start + content_start)
+        } else {
+            Vec::new()
+        };
         let span = Span {
             start: line.start,
             end: line.end,
@@ -278,7 +298,12 @@ impl Parser {
         ))
     }
 
-    fn parse_paragraph(&mut self, lines: &[Line], start: usize) -> (Option<Block>, usize) {
+    fn parse_paragraph(
+        &mut self,
+        lines: &[Line],
+        start: usize,
+        parse_inlines: bool,
+    ) -> (Option<Block>, usize) {
         let mut i = start;
         let mut content_lines: Vec<Line> = Vec::new();
         let mut setext_level = None;
@@ -302,16 +327,20 @@ impl Parser {
             }
             if let Some((label, definition, next)) = parse_link_reference_definition_lines(lines, i)
             {
-                self.link_defs.entry(label).or_insert(definition);
-                i = next;
-                continue;
+                if content_lines.is_empty() {
+                    self.link_defs.entry(label).or_insert(definition);
+                    i = next;
+                    continue;
+                }
             }
             content_lines.push(line.clone());
             if let Some(next) = lines.get(i + 1) {
-                if let Some(level) = setext_underline_level(&next.text) {
-                    setext_level = Some(level);
-                    setext_end = i + 1;
-                    break;
+                if !line.lazy_continuation {
+                    if let Some(level) = setext_underline_level(&next.text) {
+                        setext_level = Some(level);
+                        setext_end = i + 1;
+                        break;
+                    }
                 }
             }
             i += 1;
@@ -327,7 +356,11 @@ impl Parser {
         };
         if let Some(level) = setext_level {
             let (buffer, offsets) = self.build_heading_buffer(&content_lines);
-            let content = self.parse_inline_buffer(&buffer, &offsets);
+            let content = if parse_inlines {
+                self.parse_inline_buffer(&buffer, &offsets)
+            } else {
+                Vec::new()
+            };
             let span = Span {
                 start: span_start,
                 end: lines[setext_end].end,
@@ -346,7 +379,11 @@ impl Parser {
         }
 
         let (buffer, offsets) = self.build_inline_buffer(&content_lines);
-        let content = self.parse_inline_buffer(&buffer, &offsets);
+        let content = if parse_inlines {
+            self.parse_inline_buffer(&buffer, &offsets)
+        } else {
+            Vec::new()
+        };
 
         let block = Block {
             span: Span {
@@ -497,7 +534,12 @@ impl Parser {
         ))
     }
 
-    fn parse_box_block(&mut self, lines: &[Line], start: usize) -> Option<(Block, usize)> {
+    fn parse_box_block(
+        &mut self,
+        lines: &[Line],
+        start: usize,
+        parse_inlines: bool,
+    ) -> Option<(Block, usize)> {
         let line = &lines[start];
         if !line.text.starts_with(":::") {
             return None;
@@ -513,11 +555,13 @@ impl Parser {
         let title_text = rest.strip_prefix("box").unwrap_or("").trim_start();
         let title = if title_text.is_empty() {
             None
-        } else {
+        } else if parse_inlines {
             Some(self.parse_inline(
                 title_text,
                 line.start + (line.text.len() - title_text.len()),
             ))
+        } else {
+            None
         };
 
         let mut i = start + 1;
@@ -579,7 +623,7 @@ impl Parser {
             inner_lines.push(candidate.clone());
             i += 1;
         }
-        let blocks = self.parse_blocks(&inner_lines);
+        let blocks = self.parse_blocks(&inner_lines, parse_inlines);
         let span = Span {
             start: line.start,
             end: if i == 0 {
@@ -664,7 +708,12 @@ impl Parser {
         ))
     }
 
-    fn parse_block_quote(&mut self, lines: &[Line], start: usize) -> Option<(Block, usize)> {
+    fn parse_block_quote(
+        &mut self,
+        lines: &[Line],
+        start: usize,
+        parse_inlines: bool,
+    ) -> Option<(Block, usize)> {
         let line = &lines[start];
         if blockquote_prefix_info(&line.text).is_none() {
             return None;
@@ -715,8 +764,14 @@ impl Parser {
                     start: candidate.start + prefix_bytes,
                     end: candidate.end,
                     has_newline: candidate.has_newline,
+                    lazy_continuation: false,
                 };
-                can_lazy = self.line_can_continue_paragraph(&line);
+                let list_allows_lazy = parse_list_marker(&line.text)
+                    .map(|marker| remove_list_indent(&line.text, marker.marker_len, marker.content_indent))
+                    .map_or(false, |rest| rest.trim_start().starts_with('>'));
+                can_lazy = self.line_can_continue_paragraph(&line)
+                    || line.text.trim_start().starts_with('>')
+                    || list_allows_lazy;
                 quote_lines.push(line);
                 i += 1;
                 continue;
@@ -724,18 +779,34 @@ impl Parser {
             if candidate.text.trim().is_empty() {
                 break;
             }
-            if can_lazy
-                && setext_underline_level(&candidate.text).is_none()
-                && self.line_can_continue_paragraph(candidate)
-            {
-                quote_lines.push(candidate.clone());
+            if can_lazy {
+                if !self.line_can_continue_paragraph(candidate)
+                    && setext_underline_level(&candidate.text).is_none()
+                {
+                    break;
+                }
+                if is_thematic_break_line(&candidate.text) {
+                    break;
+                }
+                if let Some(last) = quote_lines.last() {
+                    if indent_prefix_len(&last.text, 4).is_some() {
+                        break;
+                    }
+                }
+                quote_lines.push(Line {
+                    text: candidate.text.clone(),
+                    start: candidate.start,
+                    end: candidate.end,
+                    has_newline: candidate.has_newline,
+                    lazy_continuation: true,
+                });
                 can_lazy = true;
                 i += 1;
                 continue;
             }
             break;
         }
-        let blocks = self.parse_blocks(&quote_lines);
+        let blocks = self.parse_blocks(&quote_lines, parse_inlines);
         let span = Span {
             start: line.start,
             end: if i == 0 {
@@ -754,7 +825,12 @@ impl Parser {
         ))
     }
 
-    fn parse_list(&mut self, lines: &[Line], start: usize) -> Option<(Block, usize)> {
+    fn parse_list(
+        &mut self,
+        lines: &[Line],
+        start: usize,
+        parse_inlines: bool,
+    ) -> Option<(Block, usize)> {
         let line = &lines[start];
         let marker = parse_list_marker(&line.text)?;
         let mut i = start;
@@ -762,6 +838,7 @@ impl Parser {
         let mut item_blanks = Vec::new();
         let mut list_has_blank = false;
         let list_start = marker.start;
+        let mut list_end = lines[start].end;
 
         while i < lines.len() {
             let current = &lines[i];
@@ -786,9 +863,12 @@ impl Parser {
                 start: current.start + marker_len,
                 end: current.end,
                 has_newline: current.has_newline,
+                lazy_continuation: false,
             });
-            let mut can_lazy =
-                self.line_can_continue_paragraph(item_lines.last().unwrap_or(current));
+            let mut can_lazy = {
+                let line = item_lines.last().unwrap_or(current);
+                self.line_can_continue_paragraph(line) || line.text.trim_start().starts_with('>')
+            };
             let mut j = i + 1;
             let mut pending_blank: Vec<Line> = Vec::new();
             while j < lines.len() {
@@ -796,6 +876,23 @@ impl Parser {
                 if next.text.trim().is_empty() {
                     if !seen_content {
                         if initial_blank_lines >= 1 {
+                            // Allow list continuation after a blank line if a new item follows.
+                            let mut k = j + 1;
+                            while k < lines.len() && lines[k].text.trim().is_empty() {
+                                list_has_blank = true;
+                                k += 1;
+                            }
+                            if k < lines.len() {
+                                if let Some(next_marker) = parse_list_marker(&lines[k].text) {
+                                    if next_marker.ordered == marker.ordered
+                                        && next_marker.marker == marker.marker
+                                    {
+                                        list_has_blank = true;
+                                        j = k;
+                                        break;
+                                    }
+                                }
+                            }
                             break;
                         }
                         initial_blank_lines += 1;
@@ -813,6 +910,7 @@ impl Parser {
                                 start: blank.start,
                                 end: blank.end,
                                 has_newline: blank.has_newline,
+                                lazy_continuation: false,
                             });
                         }
                     }
@@ -823,9 +921,14 @@ impl Parser {
                         start: next.start,
                         end: next.end,
                         has_newline: next.has_newline,
+                        lazy_continuation: false,
                     });
                     seen_content = true;
-                    can_lazy = self.line_can_continue_paragraph(item_lines.last().unwrap_or(next));
+                    can_lazy = {
+                        let line = item_lines.last().unwrap_or(next);
+                        self.line_can_continue_paragraph(line)
+                            || line.text.trim_start().starts_with('>')
+                    };
                     last_line_idx = j;
                     j += 1;
                     continue;
@@ -853,7 +956,7 @@ impl Parser {
                 }
                 break;
             }
-            let blocks = self.parse_blocks(&item_lines);
+            let blocks = self.parse_blocks(&item_lines, parse_inlines);
             let item_has_blank = item_has_blank_between_blocks(&item_lines, &blocks);
             let span = Span {
                 start: current.start,
@@ -861,6 +964,7 @@ impl Parser {
             };
             items.push(ListItem { span, blocks });
             item_blanks.push(item_has_blank);
+            list_end = span.end;
             i = j;
         }
 
@@ -876,11 +980,7 @@ impl Parser {
 
         let span = Span {
             start: lines[start].start,
-            end: if i == 0 {
-                lines[start].end
-            } else {
-                lines[i.saturating_sub(1)].end
-            },
+            end: list_end,
         };
         Some((
             Block {
@@ -950,10 +1050,27 @@ impl Parser {
         let mut buffer = String::new();
         let mut offsets = Vec::new();
         for (idx, line) in lines.iter().enumerate() {
-            buffer.push_str(&line.text);
+            let mut text = line.text.as_str();
+            let mut start_offset = line.start;
+            let mut removed = 0usize;
+            for ch in text.chars() {
+                if ch == ' ' && removed < 3 {
+                    removed += 1;
+                } else {
+                    break;
+                }
+            }
+            if removed > 0 {
+                text = &text[removed..];
+                start_offset += removed;
+            }
+            if idx + 1 == lines.len() {
+                text = text.trim_end_matches(|ch| ch == ' ' || ch == '\t');
+            }
+            buffer.push_str(text);
             // Map each byte in the buffer back to the original source offset.
-            for byte_idx in 0..line.text.len() {
-                offsets.push(line.start + byte_idx);
+            for byte_idx in 0..text.len() {
+                offsets.push(start_offset + byte_idx);
             }
             if line.has_newline && idx + 1 < lines.len() {
                 buffer.push('\n');
@@ -1047,6 +1164,15 @@ impl Parser {
                         text_start = i;
                         continue;
                     }
+                    let run_len = count_run(bytes, i, end, b'`');
+                    if text_buf.is_empty() {
+                        text_start = i;
+                    }
+                    for _ in 0..run_len {
+                        text_buf.push(b'`');
+                    }
+                    i += run_len;
+                    continue;
                 }
                 b'$' => {
                     if let Some((inline, next)) = self.parse_inline_math(buffer, offsets, i, end) {
@@ -1149,7 +1275,7 @@ impl Parser {
                 b'*' | b'_' => {
                     let run_len = count_run(bytes, i, end, b);
                     let (can_open, can_close) =
-                        delimiter_properties(bytes, start, end, i, run_len, b);
+                        delimiter_properties(buffer, start, end, i, run_len, b);
                     self.flush_text_buf(&mut out, offsets, &mut text_buf, &mut text_start, i);
                     let text = std::iter::repeat(b as char)
                         .take(run_len)
@@ -1166,6 +1292,8 @@ impl Parser {
                             node_index: out.len().saturating_sub(1),
                             can_open,
                             can_close,
+                            orig_can_open: can_open,
+                            orig_can_close: can_close,
                         });
                     }
                     i += run_len;
@@ -1179,7 +1307,7 @@ impl Parser {
                         .take_while(|byte| **byte == b' ')
                         .count();
                     let hard_break = trailing >= 2;
-                    if hard_break {
+                    if trailing > 0 {
                         for _ in 0..trailing {
                             text_buf.pop();
                         }
@@ -1358,7 +1486,10 @@ impl Parser {
         }
         let inner = &buffer[start + 1..i];
         let (url, display) = if is_autolink_scheme(inner) {
-            (inner.to_string(), inner.to_string())
+            (
+                percent_encode_autolink_url(inner),
+                inner.to_string(),
+            )
         } else if is_autolink_email(inner) {
             (format!("mailto:{}", inner), inner.to_string())
         } else {
@@ -1397,13 +1528,31 @@ impl Parser {
         }
         if bytes[start + 1] == b'!' {
             if start + 3 < end && bytes[start + 2] == b'-' && bytes[start + 3] == b'-' {
+                if start + 4 < end && bytes[start + 4] == b'>' {
+                    let raw = buffer[start..start + 5].to_string();
+                    let span = self.span_from_offsets(offsets, start, start + 5);
+                    return Some((
+                        Inline {
+                            span,
+                            kind: InlineKind::HtmlSpan { raw },
+                        },
+                        start + 5,
+                    ));
+                }
+                if start + 5 < end && bytes[start + 4] == b'-' && bytes[start + 5] == b'>' {
+                    let raw = buffer[start..start + 6].to_string();
+                    let span = self.span_from_offsets(offsets, start, start + 6);
+                    return Some((
+                        Inline {
+                            span,
+                            kind: InlineKind::HtmlSpan { raw },
+                        },
+                        start + 6,
+                    ));
+                }
                 let mut i = start + 4;
                 while i + 2 < end {
-                    let b = bytes[i];
-                    if b == b'\n' {
-                        return None;
-                    }
-                    if b == b'-' && bytes[i + 1] == b'-' && bytes[i + 2] == b'>' {
+                    if bytes[i] == b'-' && bytes[i + 1] == b'-' && bytes[i + 2] == b'>' {
                         let raw = buffer[start..i + 3].to_string();
                         let span = self.span_from_offsets(offsets, start, i + 3);
                         return Some((
@@ -1424,11 +1573,7 @@ impl Parser {
             {
                 let mut i = start + 9;
                 while i + 2 < end {
-                    let b = bytes[i];
-                    if b == b'\n' {
-                        return None;
-                    }
-                    if b == b']' && bytes[i + 1] == b']' && bytes[i + 2] == b'>' {
+                    if bytes[i] == b']' && bytes[i + 1] == b']' && bytes[i + 2] == b'>' {
                         let raw = buffer[start..i + 3].to_string();
                         let span = self.span_from_offsets(offsets, start, i + 3);
                         return Some((
@@ -1446,11 +1591,7 @@ impl Parser {
             if start + 2 < end && bytes[start + 2].is_ascii_alphabetic() {
                 let mut i = start + 2;
                 while i < end {
-                    let b = bytes[i];
-                    if b == b'\n' {
-                        return None;
-                    }
-                    if b == b'>' {
+                    if bytes[i] == b'>' {
                         let raw = buffer[start..i + 1].to_string();
                         let span = self.span_from_offsets(offsets, start, i + 1);
                         return Some((
@@ -1470,11 +1611,7 @@ impl Parser {
         if bytes[start + 1] == b'?' {
             let mut i = start + 2;
             while i + 1 < end {
-                let b = bytes[i];
-                if b == b'\n' {
-                    return None;
-                }
-                if b == b'?' && bytes[i + 1] == b'>' {
+                if bytes[i] == b'?' && bytes[i + 1] == b'>' {
                     let raw = buffer[start..i + 2].to_string();
                     let span = self.span_from_offsets(offsets, start, i + 2);
                     return Some((
@@ -1509,25 +1646,20 @@ impl Parser {
             }
             break;
         }
-        if i == name_start {
+        if i == name_start || i >= end {
             return None;
         }
-        if i >= end {
+        if !bytes[i].is_ascii_whitespace()
+            && bytes[i] != b'>'
+            && !(bytes[i] == b'/' && i + 1 < end && bytes[i + 1] == b'>')
+        {
             return None;
         }
-        let after_name = bytes[i];
-        if !(after_name.is_ascii_whitespace() || after_name == b'/' || after_name == b'>') {
-            return None;
-        }
-        if closing && after_name == b'/' {
-            return None;
-        }
-        while i < end {
-            let b = bytes[i];
-            if b == b'\n' {
-                return None;
+        if closing {
+            while i < end && bytes[i].is_ascii_whitespace() {
+                i += 1;
             }
-            if b == b'>' {
+            if i < end && bytes[i] == b'>' {
                 let raw = buffer[start..i + 1].to_string();
                 let span = self.span_from_offsets(offsets, start, i + 1);
                 return Some((
@@ -1538,9 +1670,97 @@ impl Parser {
                     i + 1,
                 ));
             }
-            i += 1;
+            return None;
         }
-        None
+        loop {
+            while i < end && bytes[i].is_ascii_whitespace() {
+                i += 1;
+            }
+            if i >= end {
+                return None;
+            }
+            if bytes[i] == b'>' {
+                let raw = buffer[start..i + 1].to_string();
+                let span = self.span_from_offsets(offsets, start, i + 1);
+                return Some((
+                    Inline {
+                        span,
+                        kind: InlineKind::HtmlSpan { raw },
+                    },
+                    i + 1,
+                ));
+            }
+            if bytes[i] == b'/' && i + 1 < end && bytes[i + 1] == b'>' {
+                let raw = buffer[start..i + 2].to_string();
+                let span = self.span_from_offsets(offsets, start, i + 2);
+                return Some((
+                    Inline {
+                        span,
+                        kind: InlineKind::HtmlSpan { raw },
+                    },
+                    i + 2,
+                ));
+            }
+            if !is_attr_name_start(bytes[i]) {
+                return None;
+            }
+            i += 1;
+            while i < end && is_attr_name_continue(bytes[i]) {
+                i += 1;
+            }
+            let mut ws = i;
+            while ws < end && bytes[ws].is_ascii_whitespace() {
+                ws += 1;
+            }
+            if ws < end && bytes[ws] == b'=' {
+                i = ws + 1;
+                while i < end && bytes[i].is_ascii_whitespace() {
+                    i += 1;
+                }
+                if i >= end {
+                    return None;
+                }
+                let quote = bytes[i];
+                if quote == b'"' || quote == b'\'' {
+                    i += 1;
+                    while i < end && bytes[i] != quote {
+                        i += 1;
+                    }
+                    if i >= end {
+                        return None;
+                    }
+                    i += 1;
+                } else {
+                    let mut consumed = false;
+                    while i < end {
+                        let b = bytes[i];
+                        if b.is_ascii_whitespace() || b == b'>' {
+                            break;
+                        }
+                        if b == b'/' && i + 1 < end && bytes[i + 1] == b'>' {
+                            break;
+                        }
+                        if matches!(b, b'"' | b'\'' | b'=' | b'<' | b'>' | b'`') {
+                            return None;
+                        }
+                        consumed = true;
+                        i += 1;
+                    }
+                    if !consumed {
+                        return None;
+                    }
+                }
+            }
+            if i < end {
+                let b = bytes[i];
+                if !(b.is_ascii_whitespace()
+                    || b == b'>'
+                    || (b == b'/' && i + 1 < end && bytes[i + 1] == b'>'))
+                {
+                    return None;
+                }
+            }
+        }
     }
 
     fn parse_reference_inline(
@@ -1550,6 +1770,21 @@ impl Parser {
         start: usize,
         end: usize,
     ) -> Option<(Inline, usize)> {
+        if start > 0 {
+            if let Some(prev) = buffer[..start].chars().next_back() {
+                if prev.is_alphanumeric() || matches!(prev, '+' | '-' | '.' | '_') {
+                    return None;
+                }
+            }
+            let last_ws = buffer[..start]
+                .rfind(|ch: char| ch.is_whitespace())
+                .map(|idx| idx + 1)
+                .unwrap_or(0);
+            let token = &buffer[last_ws..start];
+            if token.contains('/') || token.contains('\\') {
+                return None;
+            }
+        }
         let bytes = buffer.as_bytes();
         let (label, label_end) = parse_label(bytes, start + 1, end)?;
         let label_span = self.span_from_offsets(offsets, start + 1, label_end);
@@ -1619,6 +1854,17 @@ impl Parser {
     ) -> Option<usize> {
         let opener_pos = brackets.iter().rposition(|entry| entry.active)?;
         let opener = brackets.get(opener_pos)?.clone();
+        if opener.image {
+            if let Some(inactive_pos) = brackets
+                .iter()
+                .rposition(|entry| !entry.active && !entry.image)
+            {
+                if inactive_pos > opener_pos {
+                    brackets.remove(inactive_pos);
+                    return None;
+                }
+            }
+        }
         enum ParsedLink {
             Inline {
                 url: String,
@@ -1685,6 +1931,11 @@ impl Parser {
                 _ => text_label,
             };
             if lookup.is_empty() {
+                return None;
+            }
+            let normalized_lookup = normalize_link_label(lookup.as_bytes());
+            if !self.link_defs.contains_key(&normalized_lookup) {
+                brackets.remove(opener_pos);
                 return None;
             }
 
@@ -1771,6 +2022,13 @@ impl Parser {
         };
         out.push(Inline { span, kind });
 
+        if !opener.image {
+            for entry in brackets.iter_mut() {
+                if !entry.image {
+                    entry.active = false;
+                }
+            }
+        }
         brackets.retain(|entry| entry.node_index < opener.node_index);
         Some(close + 1)
     }
@@ -1864,6 +2122,7 @@ impl Parser {
         let opener_remain = opener.len.saturating_sub(use_len);
         let closer_remain = closer.len.saturating_sub(use_len);
         let mut replacement = Vec::new();
+        // Opener残余
         if opener_remain > 0 {
             let span = Span {
                 start: opener_node.span.start,
@@ -1878,6 +2137,7 @@ impl Parser {
             });
         }
 
+        // 強調本体
         let emph_span = Span {
             start: opener_node.span.start + opener_remain,
             end: closer_node.span.end.saturating_sub(closer_remain),
@@ -1892,6 +2152,7 @@ impl Parser {
             kind: emph_kind,
         });
 
+        // Closer残余
         if closer_remain > 0 {
             let span = Span {
                 start: closer_node.span.end.saturating_sub(closer_remain),
@@ -1936,6 +2197,8 @@ impl Parser {
                 node_index: next_index,
                 can_open: opener.can_open,
                 can_close: opener.can_close,
+                orig_can_open: opener.orig_can_open,
+                orig_can_close: opener.orig_can_close,
             });
             next_index += 1;
         }
@@ -1947,6 +2210,8 @@ impl Parser {
                 node_index: next_index,
                 can_open: closer.can_open,
                 can_close: closer.can_close,
+                orig_can_open: closer.orig_can_open,
+                orig_can_close: closer.orig_can_close,
             });
         }
         updated.sort_by_key(|delim| delim.node_index);
@@ -1956,13 +2221,18 @@ impl Parser {
     fn span_from_offsets(&self, offsets: &[usize], start: usize, end: usize) -> Span {
         let source_end = self.source.len();
         let start_off = offsets.get(start).copied().unwrap_or(source_end);
-        let end_off = if end < offsets.len() {
+        let mut end_off = if end < offsets.len() {
             offsets[end]
         } else if let Some(last) = offsets.last() {
             last.saturating_add(1)
         } else {
             source_end
         };
+
+        if end_off > source_end {
+            end_off = source_end;
+        }
+
         Span {
             start: start_off,
             end: end_off,
@@ -2441,6 +2711,7 @@ fn split_lines(source: &str) -> Vec<Line> {
                 start,
                 end: idx,
                 has_newline: true,
+                lazy_continuation: false,
             });
             start = idx + 1;
         }
@@ -2452,6 +2723,7 @@ fn split_lines(source: &str) -> Vec<Line> {
             start,
             end: source.len(),
             has_newline: false,
+            lazy_continuation: false,
         });
     }
     lines
@@ -2583,33 +2855,80 @@ fn parse_fence_open(text: &str) -> Option<(usize, usize, String)> {
         return None;
     }
     // Process backslash escapes and entities in info string
-    let info_unescaped = unescape_backslash(info);
-    let info_decoded = decode_entities_in_string(&info_unescaped);
+    let info_decoded = unescape_and_decode(info);
     Some((idx, fence_len, info_decoded))
 }
 
-/// Processes backslash escapes in text.
-/// According to CommonMark, a backslash before any ASCII punctuation character escapes it.
-fn unescape_backslash(text: &str) -> String {
+fn unescape_and_decode(text: &str) -> String {
+    // Combined unescape + entity decode that respects backslash-escaping.
+    //
+    // Behavior:
+    // - If a backslash precedes an ASCII punctuation character (CommonMark rule),
+    //   the backslash is consumed and the punctuation is emitted literally.
+    //   In particular, a backslash before '&' produces a literal '&' which
+    //   will NOT be treated as the start of a character entity.
+    // - Otherwise, an unescaped '&' is interpreted as the start of an entity
+    //   and decode_entity is used to convert it to UTF-8 bytes.
+    // - All other UTF-8 characters are copied through unchanged.
+    let bytes = text.as_bytes();
     let mut result = String::new();
-    let mut chars = text.chars();
-    while let Some(ch) = chars.next() {
-        if ch == '\\' {
-            if let Some(next) = chars.next() {
-                // CommonMark: backslash escapes ASCII punctuation
+    let mut i = 0usize;
+    while i < bytes.len() {
+        // Backslash escapes
+        if bytes[i] == b'\\' {
+            if i + 1 < bytes.len() {
+                let next = bytes[i + 1];
                 if next.is_ascii_punctuation() {
-                    result.push(next);
+                    // Emit the punctuation literally and skip the backslash.
+                    result.push(next as char);
+                    i += 2;
+                    continue;
                 } else {
+                    // Not an escapable punctuation: keep the backslash verbatim.
                     result.push('\\');
-                    result.push(next);
+                    i += 1;
+                    continue;
                 }
             } else {
+                // Trailing backslash: keep it.
                 result.push('\\');
+                i += 1;
+                continue;
             }
-        } else {
+        }
+
+        // Entities: only when unescaped '&' encountered
+        if bytes[i] == b'&' {
+            if let Some((decoded, next)) = decode_entity(bytes, i, bytes.len()) {
+                // decoded is a Vec<u8> representing UTF-8 bytes
+                let s = match std::str::from_utf8(&decoded) {
+                    Ok(v) => v.to_string(),
+                    Err(_) => String::from_utf8_lossy(&decoded).to_string(),
+                };
+                result.push_str(&s);
+                i = next;
+                continue;
+            } else {
+                // Not a valid entity, emit '&' literally.
+                result.push('&');
+                i += 1;
+                continue;
+            }
+        }
+
+        // Normal UTF-8 character
+        if let Some(ch) = std::str::from_utf8(&bytes[i..])
+            .ok()
+            .and_then(|s| s.chars().next())
+        {
             result.push(ch);
+            i += ch.len_utf8();
+        } else {
+            // Invalid UTF-8 byte, skip it.
+            i += 1;
         }
     }
+
     result
 }
 
@@ -2944,30 +3263,141 @@ fn match_html_block_tag(text: &str) -> bool {
 }
 
 fn match_html_any_tag(text: &str) -> bool {
-    let tag = match parse_html_tag_name(text) {
-        Some(tag) => tag,
+    let bytes = text.as_bytes();
+    let end = match parse_html_tag_end(bytes) {
+        Some(end) => end,
         None => return false,
     };
-    if !is_html_tag_boundary(text.as_bytes(), tag.after) {
-        return false;
+    if let Some(tag) = parse_html_tag_name(text) {
+        if is_type1_tag_name(tag.name) {
+            return false;
+        }
     }
-    if is_type1_tag_name(tag.name) {
-        return false;
-    }
-    let bytes = text.as_bytes();
-    let mut idx = tag.after;
-    while idx < bytes.len() && bytes[idx] != b'>' {
-        idx += 1;
-    }
-    if idx >= bytes.len() {
-        return false;
-    }
-    for b in &bytes[idx + 1..] {
+    for b in &bytes[end + 1..] {
         if *b != b' ' && *b != b'\t' {
             return false;
         }
     }
     true
+}
+
+fn parse_html_tag_end(bytes: &[u8]) -> Option<usize> {
+    if bytes.len() < 2 || bytes[0] != b'<' {
+        return None;
+    }
+    let mut i = 1;
+    let mut closing = false;
+    if bytes.get(i) == Some(&b'/') {
+        closing = true;
+        i += 1;
+    }
+    if i >= bytes.len() || !bytes[i].is_ascii_alphabetic() {
+        return None;
+    }
+    i += 1;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b.is_ascii_alphanumeric() || b == b'-' {
+            i += 1;
+            continue;
+        }
+        break;
+    }
+    if i >= bytes.len() {
+        return None;
+    }
+    if !bytes[i].is_ascii_whitespace()
+        && bytes[i] != b'>'
+        && !(bytes[i] == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'>')
+    {
+        return None;
+    }
+    if closing {
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        return if i < bytes.len() && bytes[i] == b'>' {
+            Some(i)
+        } else {
+            None
+        };
+    }
+    loop {
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i >= bytes.len() {
+            return None;
+        }
+        if bytes[i] == b'>' {
+            return Some(i);
+        }
+        if bytes[i] == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'>' {
+            return Some(i + 1);
+        }
+        if !is_attr_name_start(bytes[i]) {
+            return None;
+        }
+        i += 1;
+        while i < bytes.len() && is_attr_name_continue(bytes[i]) {
+            i += 1;
+        }
+        let after_name = i;
+        let mut ws = i;
+        while ws < bytes.len() && bytes[ws].is_ascii_whitespace() {
+            ws += 1;
+        }
+        if ws < bytes.len() && bytes[ws] == b'=' {
+            i = ws + 1;
+            while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+                i += 1;
+            }
+            if i >= bytes.len() {
+                return None;
+            }
+            let quote = bytes[i];
+            if quote == b'"' || quote == b'\'' {
+                i += 1;
+                while i < bytes.len() && bytes[i] != quote {
+                    i += 1;
+                }
+                if i >= bytes.len() {
+                    return None;
+                }
+                i += 1;
+            } else {
+                let mut consumed = false;
+                while i < bytes.len() {
+                    let b = bytes[i];
+                    if b.is_ascii_whitespace() || b == b'>' {
+                        break;
+                    }
+                    if b == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'>' {
+                        break;
+                    }
+                    if matches!(b, b'"' | b'\'' | b'=' | b'<' | b'>' | b'`') {
+                        return None;
+                    }
+                    consumed = true;
+                    i += 1;
+                }
+                if !consumed {
+                    return None;
+                }
+            }
+        } else {
+            i = after_name;
+        }
+        if i < bytes.len() {
+            let b = bytes[i];
+            if !(b.is_ascii_whitespace()
+                || b == b'>'
+                || (b == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'>'))
+            {
+                return None;
+            }
+        }
+    }
 }
 
 fn html_block_end(kind: HtmlBlockKind, line: &str) -> bool {
@@ -3411,30 +3841,46 @@ fn block_line_range(lines: &[Line], span: Span) -> Option<(usize, usize)> {
 }
 
 fn item_has_blank_between_blocks(lines: &[Line], blocks: &[Block]) -> bool {
-    if blocks.len() < 2 {
+    if blocks.is_empty() {
         return false;
     }
-    let mut prev_end = None;
+    let mut covered = vec![false; lines.len()];
     for block in blocks {
         let (start_idx, end_idx) = match block_line_range(lines, block.span) {
             Some(value) => value,
             None => return true,
         };
-        if let Some(prev_end) = prev_end {
-            if start_idx > prev_end + 1 {
-                for line in &lines[prev_end + 1..start_idx] {
-                    let trimmed = line.text.trim();
-                    if trimmed.is_empty()
-                        || (trimmed.starts_with('{')
-                            && trimmed.ends_with('}')
-                            && trimmed.len() >= 2)
-                    {
-                        return true;
-                    }
-                }
+        for idx in start_idx..=end_idx {
+            if let Some(slot) = covered.get_mut(idx) {
+                *slot = true;
             }
         }
-        prev_end = Some(end_idx);
+    }
+    let first_covered = covered.iter().position(|v| *v);
+    let last_covered = covered.iter().rposition(|v| *v);
+    let last_relevant = lines
+        .iter()
+        .rposition(|line| !line.text.trim().is_empty());
+    let (start_idx, end_idx) = match (first_covered, last_covered) {
+        (Some(start), Some(end)) => {
+            let end = match last_relevant {
+                Some(last) if last > end => last,
+                _ => end,
+            };
+            (start, end)
+        }
+        _ => return false,
+    };
+    for (idx, line) in lines.iter().enumerate().skip(start_idx).take(end_idx - start_idx + 1) {
+        if covered.get(idx).copied().unwrap_or(false) {
+            continue;
+        }
+        let trimmed = line.text.trim();
+        if trimmed.is_empty()
+            || (trimmed.starts_with('{') && trimmed.ends_with('}') && trimmed.len() >= 2)
+        {
+            return true;
+        }
     }
     false
 }
@@ -3505,7 +3951,7 @@ fn count_run(bytes: &[u8], start: usize, end: usize, needle: u8) -> usize {
 }
 
 fn delimiter_properties(
-    bytes: &[u8],
+    buffer: &str,
     start: usize,
     end: usize,
     pos: usize,
@@ -3513,21 +3959,21 @@ fn delimiter_properties(
     delim: u8,
 ) -> (bool, bool) {
     let before = if pos > start {
-        Some(bytes[pos - 1])
+        buffer[..pos].chars().next_back()
     } else {
         None
     };
     let after_pos = pos + run_len;
     let after = if after_pos < end {
-        Some(bytes[after_pos])
+        buffer[after_pos..end].chars().next()
     } else {
         None
     };
 
-    let before_is_whitespace = before.map_or(true, |b| b.is_ascii_whitespace());
-    let after_is_whitespace = after.map_or(true, |b| b.is_ascii_whitespace());
-    let before_is_punctuation = before.map_or(false, is_ascii_punctuation);
-    let after_is_punctuation = after.map_or(false, is_ascii_punctuation);
+    let before_is_whitespace = before.map_or(true, |ch| ch.is_whitespace());
+    let after_is_whitespace = after.map_or(true, |ch| ch.is_whitespace());
+    let before_is_punctuation = before.map_or(false, is_unicode_punctuation);
+    let after_is_punctuation = after.map_or(false, is_unicode_punctuation);
 
     let left_flanking = !after_is_whitespace
         && (!after_is_punctuation || before_is_whitespace || before_is_punctuation);
@@ -3543,18 +3989,31 @@ fn delimiter_properties(
     }
 }
 
+fn is_unicode_punctuation(ch: char) -> bool {
+    !ch.is_whitespace() && !ch.is_alphanumeric()
+}
+
+fn is_attr_name_start(b: u8) -> bool {
+    b.is_ascii_alphabetic() || b == b'_' || b == b':'
+}
+
+fn is_attr_name_continue(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || matches!(b, b'_' | b':' | b'.' | b'-')
+}
+
 fn delimiter_blocked(opener: &Delimiter, closer: &Delimiter) -> bool {
     if opener.ch != closer.ch {
         return false;
     }
-    if !(opener.can_open && opener.can_close && closer.can_open && closer.can_close) {
+    let opener_both = opener.orig_can_open && opener.orig_can_close;
+    let closer_both = closer.orig_can_open && closer.orig_can_close;
+    if !opener_both && !closer_both {
         return false;
     }
-    if opener.len % 3 == 0 || closer.len % 3 == 0 {
-        (opener.len + closer.len) % 3 == 0
-    } else {
-        false
+    if (opener.len + closer.len) % 3 != 0 {
+        return false;
     }
+    opener.len % 3 != 0 || closer.len % 3 != 0
 }
 
 fn parse_label(bytes: &[u8], start: usize, end: usize) -> Option<(String, usize)> {
@@ -3651,8 +4110,8 @@ fn parse_link_title(bytes: &[u8], start: usize, end: usize) -> Option<(String, u
                 Ok(value) => value,
                 Err(err) => String::from_utf8_lossy(&err.into_bytes()).to_string(),
             };
-            // Decode entities in title
-            let title = decode_entities_in_string(&title);
+            // Unescape backslashes and decode entities in title
+            let title = unescape_and_decode(&title);
             return Some((title, i + 1));
         }
         out.push(b);
@@ -3668,12 +4127,6 @@ fn parse_inline_link_destination(
 ) -> Option<(String, Option<String>, usize)> {
     let bytes = buffer.as_bytes();
     let mut i = start;
-    while i < end && bytes[i].is_ascii_whitespace() {
-        if bytes[i] == b'\n' {
-            return None;
-        }
-        i += 1;
-    }
     if i >= end || bytes[i] != b'(' {
         return None;
     }
@@ -3722,9 +4175,6 @@ fn parse_inline_link_destination(
         let mut depth = 0usize;
         while i < end {
             let b = bytes[i];
-            if b == b'\n' {
-                return None;
-            }
             if b.is_ascii_whitespace() {
                 break;
             }
@@ -3765,15 +4215,12 @@ fn parse_inline_link_destination(
         Ok(value) => value,
         Err(err) => String::from_utf8_lossy(&err.into_bytes()).to_string(),
     };
-    // Decode entities in URL and apply percent-encoding
-    let url = decode_entities_in_string(&url);
+    // Unescape backslashes and decode entities in URL, then percent-encode
+    let url = unescape_and_decode(&url);
     let url = percent_encode_url(&url);
 
     let mut had_space = false;
     while i < end && bytes[i].is_ascii_whitespace() {
-        if bytes[i] == b'\n' {
-            return None;
-        }
         had_space = true;
         i += 1;
     }
@@ -3790,9 +4237,6 @@ fn parse_inline_link_destination(
     let (title, next) = parse_link_title(bytes, i, end)?;
     i = next;
     while i < end && bytes[i].is_ascii_whitespace() {
-        if bytes[i] == b'\n' {
-            return None;
-        }
         i += 1;
     }
     if i < end && bytes[i] == b')' {
@@ -3833,6 +4277,9 @@ fn parse_link_reference_definition_lines(
     if label.is_empty() {
         return None;
     }
+    if has_unescaped_brackets(&label_bytes) {
+        return None;
+    }
     let end_line = lines.get(label_end_line)?;
     let end_bytes = end_line.text.as_bytes();
     let mut pos = label_end_pos + 1;
@@ -3845,12 +4292,14 @@ fn parse_link_reference_definition_lines(
     while pos < end_bytes.len() && is_space_or_tab(end_bytes[pos]) {
         pos += 1;
     }
+    let mut dest_on_new_line = false;
     if pos >= end_bytes.len() {
         line_idx += 1;
         if line_idx >= lines.len() {
             return None;
         }
         pos = skip_spaces_tabs(&lines[line_idx].text, 0);
+        dest_on_new_line = true;
     }
     if pos >= lines[line_idx].text.len() {
         return None;
@@ -3867,38 +4316,55 @@ fn parse_link_reference_definition_lines(
     }
     let mut title = None;
     let mut end_line_idx = line_idx;
+
+    // 1. タイトルが同一行にある場合
     if pos < lines[line_idx].text.len() {
         let first = dest_bytes[pos];
         if is_title_delim(first) {
             if !had_space_after_dest {
+                // タイトル区切りの直前にスペース/タブがなければタイトル不可
                 return None;
             }
             let (parsed, title_end_line, title_end_pos) =
                 parse_link_title_multiline(lines, line_idx, pos)?;
-            if !trailing_spaces_tabs_only(&lines[title_end_line].text, title_end_pos) {
+            // タイトル直後がスペース/タブ/行末のみならタイトルとして認める
+            if trailing_spaces_tabs_only(&lines[title_end_line].text, title_end_pos) {
+                title = Some(unescape_and_decode(&parsed));
+                end_line_idx = title_end_line;
+            } else {
+                // タイトル直後に他の文字があればタイトル不可 -> 定義全体が無効
                 return None;
             }
-            // Decode entities in title
-            title = Some(decode_entities_in_string(&parsed));
-            end_line_idx = title_end_line;
         } else {
-            return None;
+            // タイトル区切りでなければタイトルなし
         }
     } else {
+        // 2. タイトルが次行にある場合
         let peek_idx = line_idx + 1;
         if peek_idx < lines.len() {
             let peek_pos = skip_spaces_tabs(&lines[peek_idx].text, 0);
             if peek_pos < lines[peek_idx].text.len() {
                 let first = lines[peek_idx].text.as_bytes()[peek_pos];
                 if is_title_delim(first) {
+                    // 同一行にdestinationがある場合、次行タイトルは先頭にスペース/タブが必要
+                    if !dest_on_new_line && peek_pos == 0 {
+                        // タイトルとしては扱わず、定義はdestinationのみで確定
+                        return Some((
+                            label,
+                            LinkDefinition { url, title: None },
+                            end_line_idx + 1,
+                        ));
+                    }
                     let (parsed, title_end_line, title_end_pos) =
                         parse_link_title_multiline(lines, peek_idx, peek_pos)?;
-                    if !trailing_spaces_tabs_only(&lines[title_end_line].text, title_end_pos) {
+                    // タイトル直後がスペース/タブ/行末のみならタイトルとして認める
+                    if trailing_spaces_tabs_only(&lines[title_end_line].text, title_end_pos) {
+                        title = Some(unescape_and_decode(&parsed));
+                        end_line_idx = title_end_line;
+                    } else {
+                        // タイトル直後に他の文字があればタイトル不可 -> 定義全体が無効
                         return None;
                     }
-                    // Decode entities in title
-                    title = Some(decode_entities_in_string(&parsed));
-                    end_line_idx = title_end_line;
                 }
             }
         }
@@ -4111,63 +4577,52 @@ fn parse_reference_destination(bytes: &[u8], start: usize, end: usize) -> Option
         Ok(value) => value,
         Err(err) => String::from_utf8_lossy(&err.into_bytes()).to_string(),
     };
-    // Decode entities in URL and apply percent-encoding
-    let url = decode_entities_in_string(&url);
+    // Unescape backslashes and decode entities in URL, then percent-encode
+    let url = unescape_and_decode(&url);
     let url = percent_encode_url(&url);
     Some((url, i))
 }
 
-fn normalize_link_label(bytes: &[u8]) -> String {
-    let mut out = Vec::new();
+fn has_unescaped_brackets(bytes: &[u8]) -> bool {
     let mut escaped = false;
-    let mut last_space = false;
-    for (idx, &b) in bytes.iter().enumerate() {
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
         if escaped {
-            let lowered = if b.is_ascii_uppercase() {
-                b.to_ascii_lowercase()
-            } else {
-                b
-            };
-            out.push(lowered);
             escaped = false;
-            last_space = false;
+            i += 1;
             continue;
         }
-        if b == b'\\' {
-            if idx + 1 < bytes.len() && is_ascii_punctuation(bytes[idx + 1]) {
-                escaped = true;
-                continue;
-            }
-            out.push(b'\\');
-            last_space = false;
+        if b == b'\\' && i + 1 < bytes.len() && is_label_escape(bytes[i + 1]) {
+            escaped = true;
+            i += 1;
             continue;
         }
-        if b.is_ascii_whitespace() {
-            if !out.is_empty() && !last_space {
-                out.push(b' ');
-                last_space = true;
-            }
-            continue;
+        if b == b'[' || b == b']' {
+            return true;
         }
-        last_space = false;
-        let lowered = if b.is_ascii_uppercase() {
-            b.to_ascii_lowercase()
-        } else {
-            b
-        };
-        out.push(lowered);
+        i += 1;
     }
-    if escaped {
-        out.push(b'\\');
+    false
+}
+
+#[cfg(test)]
+mod link_def_tests {
+    use super::{parse_link_reference_definition_lines, split_lines};
+    use crate::label::normalize_link_label;
+
+    #[test]
+    fn link_definition_with_backslashes_parses() {
+        let input = "[foo]: /url\\bar\\*baz \"foo\\\"bar\\baz\"\n";
+        let lines = split_lines(input);
+        let parsed = parse_link_reference_definition_lines(&lines, 0);
+        assert!(parsed.is_some(), "expected link definition to parse");
     }
-    if out.last() == Some(&b' ') {
-        out.pop();
+
+    #[test]
+    fn normalize_label_eszett() {
+        assert_eq!(normalize_link_label("ẞ".as_bytes()), "ss");
     }
-    let normalized = match String::from_utf8(out) {
-        Ok(value) => value,
-        Err(err) => String::from_utf8_lossy(&err.into_bytes()).to_string(),
-    };
-    normalized.to_lowercase()
 }
 
 fn decode_entity(bytes: &[u8], start: usize, end: usize) -> Option<(Vec<u8>, usize)> {
@@ -4226,37 +4681,15 @@ fn decode_entity(bytes: &[u8], start: usize, end: usize) -> Option<(Vec<u8>, usi
     Some((decoded.as_bytes().to_vec(), i + 1))
 }
 
-/// Decode all entities in a string (for use in link URLs, titles, and code info strings)
-fn decode_entities_in_string(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut result = String::new();
-    let mut i = 0;
-
-    while i < bytes.len() {
-        if bytes[i] == b'&' {
-            if let Some((decoded, next)) = decode_entity(bytes, i, bytes.len()) {
-                result.push_str(std::str::from_utf8(&decoded).unwrap_or(""));
-                i = next;
-                continue;
-            }
-        }
-        result.push(bytes[i] as char);
-        i += 1;
-    }
-
-    result
-}
-
 /// Percent-encode non-ASCII characters in URL (CommonMark requirement)
 fn percent_encode_url(url: &str) -> String {
+    // Encode only non-ASCII characters and spaces.
+    // Keep all other ASCII characters verbatim.
     let mut result = String::new();
     for ch in url.chars() {
-        if ch.is_ascii()
-            && !matches!(
-                ch,
-                ' ' | '<' | '>' | '"' | '{' | '}' | '|' | '\\' | '^' | '`'
-            )
-        {
+        if ch == ' ' {
+            result.push_str("%20");
+        } else if ch.is_ascii() {
             result.push(ch);
         } else {
             let mut buf = [0u8; 4];
@@ -4269,6 +4702,13 @@ fn percent_encode_url(url: &str) -> String {
     result
 }
 
+fn percent_encode_autolink_url(url: &str) -> String {
+    let encoded = percent_encode_url(url);
+    let encoded = encoded.replace('\\', "%5C");
+    let encoded = encoded.replace('[', "%5B");
+    encoded.replace(']', "%5D")
+}
+
 fn is_autolink_scheme(value: &str) -> bool {
     let bytes = value.as_bytes();
     let mut i = 0;
@@ -4278,7 +4718,7 @@ fn is_autolink_scheme(value: &str) -> bool {
     while i < bytes.len() {
         let b = bytes[i];
         if b == b':' {
-            return i > 0 && i + 1 < bytes.len();
+            return i >= 2 && i + 1 < bytes.len();
         }
         let ok = b.is_ascii_alphanumeric() || matches!(b, b'+' | b'-' | b'.');
         if !ok {

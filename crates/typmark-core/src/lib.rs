@@ -2,6 +2,7 @@ mod ast;
 mod diagnostic;
 mod emit;
 mod entities;
+mod label;
 mod math;
 mod parser;
 mod resolver;

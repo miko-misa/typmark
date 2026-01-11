@@ -307,6 +307,7 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
             let id = id_attr(block.attrs.label.as_ref());
             let start_attr = if *ordered {
                 start
+                    .filter(|&value| value != 1) // Omit start="1" (default value)
                     .map(|value| format!(" start=\"{}\"", value))
                     .unwrap_or_default()
             } else {
@@ -315,6 +316,10 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
             writer.line(&format!("<{}{}{}>", tag, id, start_attr));
             writer.indent += 1;
             for item in items {
+                if item.blocks.is_empty() {
+                    writer.line("<li></li>");
+                    continue;
+                }
                 if *tight && !item.blocks.is_empty() {
                     // In tight lists, unwrap the first paragraph (if any)
                     if let BlockKind::Paragraph { content } = &item.blocks[0].kind {
@@ -329,24 +334,42 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
                         if item.blocks.len() > 1 {
                             writer.out.push('\n');
                             writer.indent += 1;
-                            for child in &item.blocks[1..] {
-                                emit_block(writer, child);
+                            let mut last_ended = true;
+                            for (idx, child) in item.blocks[1..].iter().enumerate() {
+                                let ended = emit_block_tight(writer, child);
+                                if !ended && idx + 1 < item.blocks.len() - 1 {
+                                    writer.out.push('\n');
+                                }
+                                last_ended = ended;
                             }
                             writer.indent -= 1;
-                            writer.line("</li>");
+                            if last_ended {
+                                writer.line("</li>");
+                            } else {
+                                writer.out.push_str("</li>\n");
+                            }
                         } else {
                             // Only one paragraph, close on same line
                             writer.out.push_str("</li>\n");
                         }
                     } else {
-                        // First block is not a paragraph, render all blocks normally
+                        // First block is not a paragraph, render all blocks with tight semantics
                         writer.line("<li>");
                         writer.indent += 1;
-                        for child in &item.blocks {
-                            emit_block(writer, child);
+                        let mut last_ended = true;
+                        for (idx, child) in item.blocks.iter().enumerate() {
+                            let ended = emit_block_tight(writer, child);
+                            if !ended && idx + 1 < item.blocks.len() {
+                                writer.out.push('\n');
+                            }
+                            last_ended = ended;
                         }
                         writer.indent -= 1;
-                        writer.line("</li>");
+                        if last_ended {
+                            writer.line("</li>");
+                        } else {
+                            writer.out.push_str("</li>\n");
+                        }
                     }
                 } else {
                     // Loose list: render all blocks normally (paragraphs get <p> tags)
@@ -402,7 +425,7 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
                 Err(source) => writer.line(&format!(
                     "<div class=\"TypMark-math-block--error\"{}>{}</div>",
                     id,
-                    escape_html(&source)
+                    escape_text(&source)
                 )),
             }
         }
@@ -427,6 +450,67 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
     }
 }
 
+fn emit_block_tight(writer: &mut HtmlWriter, block: &Block) -> bool {
+    match &block.kind {
+        BlockKind::Paragraph { content } => {
+            let inline = render_inlines_with_context(content, RenderContext::Normal);
+            writer.out.push_str(&"  ".repeat(writer.indent));
+            writer.out.push_str(&inline);
+            false
+        }
+        BlockKind::Section {
+            level,
+            title,
+            label,
+            children,
+        } => {
+            if writer.options.wrap_sections {
+                let id = id_attr(label.as_ref());
+                writer.line(&format!("<section{}>", id));
+                writer.indent += 1;
+                let heading = format!(
+                    "<h{}>{}</h{}>",
+                    level,
+                    render_inlines_with_context(title, RenderContext::Title),
+                    level
+                );
+                writer.line(&heading);
+                for (idx, child) in children.iter().enumerate() {
+                    let ended = emit_block_tight(writer, child);
+                    if !ended && idx + 1 < children.len() {
+                        writer.out.push('\n');
+                    }
+                }
+                writer.indent -= 1;
+                writer.line("</section>");
+                true
+            } else {
+                let id = id_attr(label.as_ref());
+                writer.line(&format!(
+                    "<h{}{}>{}</h{}>",
+                    level,
+                    id,
+                    render_inlines_with_context(title, RenderContext::Title),
+                    level
+                ));
+                let mut last_ended = true;
+                for (idx, child) in children.iter().enumerate() {
+                    let ended = emit_block_tight(writer, child);
+                    if !ended && idx + 1 < children.len() {
+                        writer.out.push('\n');
+                    }
+                    last_ended = ended;
+                }
+                last_ended
+            }
+        }
+        _ => {
+            emit_block(writer, block);
+            true
+        }
+    }
+}
+
 fn emit_code_block(
     writer: &mut HtmlWriter,
     lang: Option<&str>,
@@ -436,13 +520,15 @@ fn emit_code_block(
 ) {
     if writer.options.simple_code_blocks {
         // CommonMark-compatible simple output
-        let escaped = escape_html(text);
+        // Use code-specific escaping for code contents.
+        let escaped = escape_html_code(text);
         let lang_class = lang
             .map(|l| format!(" class=\"language-{}\"", escape_attr(l)))
             .unwrap_or_default();
         writer.out.push_str(&format!("<pre><code{}>", lang_class));
         writer.out.push_str(&escaped);
-        if !escaped.ends_with('\n') {
+        // Only add newline if text is non-empty and doesn't already end with one
+        if !escaped.is_empty() && !escaped.ends_with('\n') {
             writer.out.push('\n');
         }
         writer.out.push_str("</code></pre>\n");
@@ -457,11 +543,13 @@ fn emit_code_block(
 
         if is_simple {
             // Emit simple CommonMark-style pre/code for indented code blocks
-            let escaped = escape_html(text);
+            // Use code-specific escaping for code contents.
+            let escaped = escape_html_code(text);
             // Write as single line without indentation for CommonMark compatibility
             writer.out.push_str("<pre><code>");
             writer.out.push_str(&escaped);
-            if !escaped.ends_with('\n') {
+            // Only add newline if text is non-empty and doesn't already end with one
+            if !escaped.is_empty() && !escaped.ends_with('\n') {
                 writer.out.push('\n');
             }
             writer.out.push_str("</code></pre>\n");
@@ -519,7 +607,11 @@ fn emit_code_block(
                         escape_attr(&label.label.name)
                     ));
                 }
-                writer.line(&format!("<span {}>{}</span>", attrs, escape_html(line)));
+                writer.line(&format!(
+                    "<span {}>{}</span>",
+                    attrs,
+                    escape_html_code(line)
+                ));
             }
 
             writer.indent -= 1;
@@ -536,21 +628,21 @@ fn render_inlines_with_context(inlines: &[Inline], context: RenderContext) -> St
     let mut out = String::new();
     for inline in inlines {
         match &inline.kind {
-            InlineKind::Text(text) => out.push_str(&escape_html(text)),
+            InlineKind::Text(text) => out.push_str(&escape_text(text)),
             InlineKind::CodeSpan(text) => {
                 out.push_str("<code>");
-                out.push_str(&escape_html(text));
+                out.push_str(&escape_html_code(text));
                 out.push_str("</code>");
             }
             InlineKind::MathInline { typst_src } => match render_math(typst_src, false) {
                 Ok(svg) => out.push_str(&svg),
                 Err(source) => {
                     out.push_str("<span class=\"TypMark-math-inline--error\">");
-                    out.push_str(&escape_html(&source));
+                    out.push_str(&escape_text(&source));
                     out.push_str("</span>");
                 }
             },
-            InlineKind::SoftBreak => out.push(' '),
+            InlineKind::SoftBreak => out.push('\n'),
             InlineKind::HardBreak => out.push_str("<br />\n"),
             InlineKind::Ref {
                 label,
@@ -579,7 +671,7 @@ fn render_inlines_with_context(inlines: &[Inline], context: RenderContext) -> St
                 title,
                 children,
             } => match context {
-                RenderContext::Normal => {
+                RenderContext::Normal | RenderContext::Title => {
                     out.push_str("<a href=\"");
                     out.push_str(&escape_url_attr(url));
                     out.push('"');
@@ -591,11 +683,6 @@ fn render_inlines_with_context(inlines: &[Inline], context: RenderContext) -> St
                     out.push('>');
                     out.push_str(&render_inlines_with_context(children, context));
                     out.push_str("</a>");
-                }
-                RenderContext::Title => {
-                    out.push_str("<span class=\"TypMark-delink\">");
-                    out.push_str(&render_inlines_with_context(children, RenderContext::Title));
-                    out.push_str("</span>");
                 }
                 RenderContext::ReferenceText => {
                     out.push_str("<span class=\"TypMark-delink\">");
@@ -616,7 +703,7 @@ fn render_inlines_with_context(inlines: &[Inline], context: RenderContext) -> St
                 out.push(']');
                 if meta.label_open_span.is_some() {
                     out.push('[');
-                    out.push_str(&escape_html(label));
+                    out.push_str(&escape_text(label));
                     out.push(']');
                 }
             }
@@ -631,17 +718,14 @@ fn render_inlines_with_context(inlines: &[Inline], context: RenderContext) -> St
                     out.push_str("<img src=\"");
                     out.push_str(&escape_url_attr(url));
                     out.push_str("\" alt=\"");
-                    out.push_str(&escape_attr(&render_inlines_with_context(
-                        alt,
-                        RenderContext::ReferenceText,
-                    )));
+                    out.push_str(&escape_attr(&render_inlines_text(alt)));
                     out.push('"');
                     if let Some(title) = title {
                         out.push_str(" title=\"");
                         out.push_str(&escape_attr(title));
                         out.push('"');
                     }
-                    out.push('>');
+                    out.push_str(" />");
                 }
             },
             InlineKind::ImageRef { label, alt, meta } => match context {
@@ -657,7 +741,7 @@ fn render_inlines_with_context(inlines: &[Inline], context: RenderContext) -> St
                     out.push(']');
                     if meta.label_open_span.is_some() {
                         out.push('[');
-                        out.push_str(&escape_html(label));
+                        out.push_str(&escape_text(label));
                         out.push(']');
                     }
                 }
@@ -683,11 +767,11 @@ fn render_ref(
     {
         render_inlines_with_context(text, RenderContext::ReferenceText)
     } else {
-        escape_html(&label.name)
+        escape_text(&label.name)
     };
 
     match context {
-        RenderContext::Normal => {
+        RenderContext::Normal | RenderContext::Title => {
             if resolved.is_some() {
                 format!(
                     "<a class=\"TypMark-ref\" href=\"#{}\">{}</a>",
@@ -702,7 +786,7 @@ fn render_ref(
                 )
             }
         }
-        RenderContext::Title | RenderContext::ReferenceText => {
+        RenderContext::ReferenceText => {
             if resolved.is_some() {
                 format!("<span class=\"TypMark-delink\">{}</span>", display)
             } else {
@@ -714,6 +798,36 @@ fn render_ref(
             }
         }
     }
+}
+
+fn render_inlines_text(inlines: &[Inline]) -> String {
+    let mut out = String::new();
+    for inline in inlines {
+        match &inline.kind {
+            InlineKind::Text(text) => out.push_str(text),
+            InlineKind::CodeSpan(text) => out.push_str(text),
+            InlineKind::MathInline { typst_src } => out.push_str(typst_src),
+            InlineKind::SoftBreak | InlineKind::HardBreak => out.push('\n'),
+            InlineKind::Ref { label, bracket, .. } => {
+                if let Some(bracket) = bracket.as_deref() {
+                    out.push_str(&render_inlines_text(bracket));
+                } else {
+                    out.push_str(&label.name);
+                }
+            }
+            InlineKind::Emph(children)
+            | InlineKind::Strong(children)
+            | InlineKind::Link { children, .. }
+            | InlineKind::LinkRef { children, .. } => {
+                out.push_str(&render_inlines_text(children));
+            }
+            InlineKind::Image { alt, .. } | InlineKind::ImageRef { alt, .. } => {
+                out.push_str(&render_inlines_text(alt));
+            }
+            InlineKind::HtmlSpan { raw } => out.push_str(raw),
+        }
+    }
+    out
 }
 
 fn line_in_ranges(line: u32, ranges: &[LineRange]) -> bool {
@@ -749,7 +863,22 @@ fn split_lines_preserve(text: &str) -> Vec<String> {
     lines
 }
 
-fn escape_html(text: &str) -> String {
+fn escape_text(text: &str) -> String {
+    let mut out = String::new();
+    for ch in text.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+fn escape_html_code(text: &str) -> String {
+    // Escape HTML for code contents.
     let mut out = String::new();
     for ch in text.chars() {
         match ch {
@@ -782,7 +911,9 @@ fn escape_url_attr(text: &str) -> String {
     for &byte in text.as_bytes() {
         match byte {
             b' ' => encoded.push_str("%20"),
+            b'`' => encoded.push_str("%60"),
             b'\\' => encoded.push_str("%5C"),
+            b'"' => encoded.push_str("%22"),
             0x00..=0x1F | 0x7F..=0xFF => {
                 encoded.push_str(&format!("%{:02X}", byte));
             }

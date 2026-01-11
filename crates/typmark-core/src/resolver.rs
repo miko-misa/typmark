@@ -8,6 +8,7 @@ use crate::diagnostic::{
     Diagnostic, DiagnosticSeverity, E_LABEL_DUP, E_REF_DEPTH, E_REF_OMIT, E_REF_SELF_TITLE,
     W_REF_MISSING,
 };
+use crate::label::{normalize_link_label, unescape_backslash_punct};
 use crate::section::build_sections;
 use crate::source_map::SourceMap;
 use crate::span::Span;
@@ -200,6 +201,7 @@ fn build_link_ref_fallback(
         });
         if let Some(label_span) = meta.label_span {
             let label_text = source[label_span.start..label_span.end].to_string();
+            let label_text = unescape_backslash_punct(&label_text);
             out.push(Inline {
                 span: label_span,
                 kind: InlineKind::Text(label_text),
@@ -622,57 +624,4 @@ fn text_inline(span: Span, text: &str) -> Inline {
         span,
         kind: InlineKind::Text(text.to_string()),
     }
-}
-
-fn normalize_link_label(bytes: &[u8]) -> String {
-    let mut out = Vec::new();
-    let mut escaped = false;
-    let mut last_space = false;
-    for (idx, &b) in bytes.iter().enumerate() {
-        if escaped {
-            let lowered = if b.is_ascii_uppercase() {
-                b.to_ascii_lowercase()
-            } else {
-                b
-            };
-            out.push(lowered);
-            escaped = false;
-            last_space = false;
-            continue;
-        }
-        if b == b'\\' {
-            if idx + 1 < bytes.len() && (bytes[idx + 1]).is_ascii_punctuation() {
-                escaped = true;
-                continue;
-            }
-            out.push(b'\\');
-            last_space = false;
-            continue;
-        }
-        if b.is_ascii_whitespace() {
-            if !out.is_empty() && !last_space {
-                out.push(b' ');
-                last_space = true;
-            }
-            continue;
-        }
-        last_space = false;
-        let lowered = if b.is_ascii_uppercase() {
-            b.to_ascii_lowercase()
-        } else {
-            b
-        };
-        out.push(lowered);
-    }
-    if escaped {
-        out.push(b'\\');
-    }
-    if out.last() == Some(&b' ') {
-        out.pop();
-    }
-    let normalized = match String::from_utf8(out) {
-        Ok(value) => value,
-        Err(err) => String::from_utf8_lossy(&err.into_bytes()).to_string(),
-    };
-    normalized.to_lowercase()
 }

@@ -154,7 +154,7 @@ Applies to:
 - Box titles
 
 Rules in Title Inline Context:
-- Links and references MUST be **de-linked** (rendered as non-clickable inline spans).
+- Links and references behave normally.
 - Inline formatting (emphasis, code spans, math, etc.) is preserved.
 - Images are allowed.
 

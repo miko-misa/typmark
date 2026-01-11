@@ -245,7 +245,7 @@ For each `Inline::Ref`:
 
 ### 6.3 Title / ReferenceText Contexts
 Implement an inline “re-writer” for:
-- TitleInlineContext: de-link links and refs → spans; preserve formatting.
+- TitleInlineContext: links and refs behave normally; preserve formatting.
 - ReferenceTextContext: same de-linking, but images → alt text.
 
 Recommendation:
