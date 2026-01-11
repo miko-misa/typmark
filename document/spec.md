@@ -19,6 +19,14 @@ TypMark adopts:
 
 TypMark only overrides behavior where this specification explicitly says so.
 
+Compatibility level:
+- Phase 0–1: CommonMark baseline.
+- Phase 2: GFM extensions.
+
+CommonMark notes (baseline behavior):
+- Raw HTML is parsed according to CommonMark's inline/block rules.
+- Backslash escapes and entity decoding follow CommonMark.
+
 ---
 
 ## 2. Core Concepts
@@ -104,6 +112,10 @@ TypMark uses Typst-like reference syntax.
 ### 5.1 Reference Forms
 - `@LabelName`
 - `@LabelName[InlineContent]`
+
+References are not recognized:
+- When the preceding character is alphanumeric or one of `+ - . _`.
+- When the token immediately before `@` contains `/` or `\` (URLs/paths).
 
 ### 5.2 Title-Bearing Elements
 Only these are **title-bearing**:

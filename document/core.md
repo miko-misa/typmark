@@ -451,6 +451,13 @@ If you target CommonMark/GFM compatibility:
 - Each phase adds golden HTML + diagnostics snapshots for every implemented MUST/ERROR rule.
 - Property tests ensure parser never panics and spans stay in-bounds.
 - No phase completes until diagnostic codes are stable and documented.
+- Phase 1 requires CommonMark spec tests to pass (excluding explicitly skipped cases).
+
+### 11.5.1 Diagnostic Code Registry
+Documented diagnostic codes (stable identifiers):
+- Errors: `E_ATTR_SYNTAX`, `E_TARGET_ORPHAN`, `E_LABEL_DUP`, `E_REF_OMIT`, `E_REF_BRACKET_NL`,
+  `E_REF_SELF_TITLE`, `E_REF_DEPTH`, `E_MATH_INLINE_NL`, `E_CODE_CONFLICT`.
+- Warnings: `W_REF_MISSING`, `W_CODE_RANGE_OOB`, `W_BOX_STYLE_INVALID`.
 
 
 ### 11.6 Phase 0 Minimum Feature Set
