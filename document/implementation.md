@@ -59,7 +59,7 @@
 - blockquote は先頭3スペースまでのインデントを許容し、paragraph だけ lazy continuation を許可。
 - box は `::: box` のみ対応。
 - ATX 見出しは先頭3スペースまでのインデントと任意の closing `#` を許容。
-- code fence は ``` のみ（`~~~` 未対応）。先頭3スペースまでのインデントと閉じフェンスを許容。
+- code fence は ``` と `~~~` に対応。先頭3スペースまでのインデントと閉じフェンスを許容。
 - box 内の code fence / 数式ブロックは box 閉じ判定から除外する。
 - HTML block は CommonMark の type 1-7 を簡略実装（終了条件やタグ境界は最小判定）。
 
@@ -113,12 +113,14 @@ Phase 0 で使用する code は `document/core.md` に準拠します。
 - `@label`（括弧省略）時はタイトル由来の表示テキストを生成（ReferenceText コンテキスト）
 
 ## 9. 既知の制約（Phase 0）
-- inline HTML は簡易判定（属性内 `>` などの厳密処理は未対応）
-- raw HTML block は簡易判定（type 6/7 は空行で終了、タグ境界と閉じ判定は最小）
-- named entity は WHATWG HTML5 の一覧に準拠（`entities.json`）
-- list marker のインデントや内容インデントは簡略化（CommonMark の詳細ルールは未対応）
+- CommonMark spec テストは「スキップを除き全例パス」。ただし **spec.json は例示テストであり仕様の全入力空間を保証しない**。
+- **Autolinks は GFM 優先**のため、CommonMark `Autolinks` 節の一部例を意図的にスキップ（裸URL/メールや `< https://... >` をリンク化する仕様）。
+- inline HTML / raw HTML block は CommonMark spec テストで検証済み（type 6/7 は空行で終了）。
+- named entity は WHATWG HTML5 の一覧に準拠（`entities.json`）。
+- list marker のインデント/内容インデントは CommonMark spec テストで検証済み。
 - ReferenceText 生成時はリンク/参照をフラット化（span ラップは最小）
 - HTML エミッタは Phase 0 の最小形のみ
+- Typst math 用フォントは `TYPMARK_FONT_PATHS`（`:` 区切り）で指定可能。未指定時は `assets/fonts/NotoSans-Regular.ttf` を使用。
 
 ## 10. 次の実装優先度
 1. GFM 拡張（tables/task list/strikethrough）と list ルール精密化
