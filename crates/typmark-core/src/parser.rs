@@ -307,13 +307,8 @@ impl Parser {
             return None;
         }
 
-        let headers = parse_table_cells(
-            self,
-            line.start,
-            &header_cells,
-            aligns.len(),
-            parse_inlines,
-        );
+        let headers =
+            parse_table_cells(self, line.start, &header_cells, aligns.len(), parse_inlines);
 
         let mut rows = Vec::new();
         let mut i = start + 2;
@@ -847,7 +842,9 @@ impl Parser {
                     lazy_continuation: false,
                 };
                 let list_allows_lazy = parse_list_marker(&line.text)
-                    .map(|marker| remove_list_indent(&line.text, marker.marker_len, marker.content_indent))
+                    .map(|marker| {
+                        remove_list_indent(&line.text, marker.marker_len, marker.content_indent)
+                    })
                     .map_or(false, |rest| rest.trim_start().starts_with('>'));
                 can_lazy = self.line_can_continue_paragraph(&line)
                     || line.text.trim_start().starts_with('>')
@@ -1580,10 +1577,7 @@ impl Parser {
         }
         let inner = &buffer[start + 1..i];
         let (url, display) = if is_autolink_scheme(inner) {
-            (
-                percent_encode_autolink_url(inner),
-                inner.to_string(),
-            )
+            (percent_encode_autolink_url(inner), inner.to_string())
         } else if is_autolink_email(inner) {
             (format!("mailto:{}", inner), inner.to_string())
         } else {
@@ -3720,11 +3714,7 @@ fn take_task_marker(content: &mut InlineSeq) -> Option<bool> {
         }
     }
 
-    if remaining == 0 {
-        Some(checked)
-    } else {
-        None
-    }
+    if remaining == 0 { Some(checked) } else { None }
 }
 
 fn autolink_inlines(inlines: &mut InlineSeq) {
@@ -3842,7 +3832,11 @@ struct AutolinkLiteral {
 
 fn match_autolink_literal(text: &str, start: usize) -> Option<AutolinkLiteral> {
     let bytes = text.as_bytes();
-    let prev = if start == 0 { None } else { bytes.get(start - 1).copied() };
+    let prev = if start == 0 {
+        None
+    } else {
+        bytes.get(start - 1).copied()
+    };
     if !is_autolink_boundary(prev) {
         return None;
     }
@@ -3877,9 +3871,7 @@ fn match_autolink_literal(text: &str, start: usize) -> Option<AutolinkLiteral> {
 fn is_autolink_boundary(prev: Option<u8>) -> bool {
     match prev {
         None => true,
-        Some(b) => {
-            b.is_ascii_whitespace() || matches!(b, b'(' | b'[' | b'{' | b'"' | b'\'')
-        }
+        Some(b) => b.is_ascii_whitespace() || matches!(b, b'(' | b'[' | b'{' | b'"' | b'\''),
     }
 }
 
@@ -3938,7 +3930,13 @@ fn trim_autolink_punct(text: &str, start: usize, mut end: usize) -> usize {
     end
 }
 
-fn trim_autolink_brackets(bytes: &[u8], start: usize, mut end: usize, open: u8, close: u8) -> usize {
+fn trim_autolink_brackets(
+    bytes: &[u8],
+    start: usize,
+    mut end: usize,
+    open: u8,
+    close: u8,
+) -> usize {
     let mut open_count = 0usize;
     let mut close_count = 0usize;
     for b in &bytes[start..end] {
@@ -3955,7 +3953,12 @@ fn trim_autolink_brackets(bytes: &[u8], start: usize, mut end: usize, open: u8, 
     end
 }
 
-fn build_autolink(text: &str, start: usize, end: usize, add_scheme: bool) -> Option<AutolinkLiteral> {
+fn build_autolink(
+    text: &str,
+    start: usize,
+    end: usize,
+    add_scheme: bool,
+) -> Option<AutolinkLiteral> {
     if end <= start {
         return None;
     }
@@ -4426,9 +4429,7 @@ fn item_has_blank_between_blocks(lines: &[Line], blocks: &[Block]) -> bool {
     }
     let first_covered = covered.iter().position(|v| *v);
     let last_covered = covered.iter().rposition(|v| *v);
-    let last_relevant = lines
-        .iter()
-        .rposition(|line| !line.text.trim().is_empty());
+    let last_relevant = lines.iter().rposition(|line| !line.text.trim().is_empty());
     let (start_idx, end_idx) = match (first_covered, last_covered) {
         (Some(start), Some(end)) => {
             let end = match last_relevant {
@@ -4439,7 +4440,12 @@ fn item_has_blank_between_blocks(lines: &[Line], blocks: &[Block]) -> bool {
         }
         _ => return false,
     };
-    for (idx, line) in lines.iter().enumerate().skip(start_idx).take(end_idx - start_idx + 1) {
+    for (idx, line) in lines
+        .iter()
+        .enumerate()
+        .skip(start_idx)
+        .take(end_idx - start_idx + 1)
+    {
         if covered.get(idx).copied().unwrap_or(false) {
             continue;
         }

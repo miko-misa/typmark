@@ -233,9 +233,8 @@ fn is_known_edge_case(example: &SpecExample) -> bool {
 }
 
 fn is_gfm_autolink_overlap(markdown: &str) -> bool {
-    let has_linkish = markdown.contains("http://")
-        || markdown.contains("https://")
-        || markdown.contains('@');
+    let has_linkish =
+        markdown.contains("http://") || markdown.contains("https://") || markdown.contains('@');
     if !has_linkish {
         return false;
     }
