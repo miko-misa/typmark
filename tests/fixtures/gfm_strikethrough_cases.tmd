@@ -1,0 +1,9 @@
+This is ~~strike~~ and ~not~.
+
+~~**bold**~~ and ~~*em*~~.
+
+~~a [link](https://example.com)~~.
+
+~~one ~~two~~ three~~.
+
+Mix ~~foo~~bar and ~~foo~~ bar.

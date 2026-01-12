@@ -1,0 +1,11 @@
+- [ ] todo
+- [x] done
+- [X] done2
+- plain
+- **[ ]** not-task
+- [ ]todo
+- [ ] [link](https://example.com)
+- note [ ] later
+1. [x] ordered
+- [ ] parent
+  - [ ] child

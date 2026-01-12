@@ -177,6 +177,26 @@ fn check_block(block: &Block, source_len: usize, context: &str) -> Result<(), St
                 )?;
             }
         }
+        BlockKind::Table(table) => {
+            for (idx, header) in table.headers.iter().enumerate() {
+                check_inline_seq(
+                    header,
+                    block.span,
+                    source_len,
+                    &format!("{}.table.headers[{}]", context, idx),
+                )?;
+            }
+            for (row_idx, row) in table.rows.iter().enumerate() {
+                for (col_idx, cell) in row.iter().enumerate() {
+                    check_inline_seq(
+                        cell,
+                        block.span,
+                        source_len,
+                        &format!("{}.table.rows[{}][{}]", context, row_idx, col_idx),
+                    )?;
+                }
+            }
+        }
         BlockKind::MathBlock { .. } | BlockKind::ThematicBreak | BlockKind::HtmlBlock { .. } => {}
     }
     Ok(())
@@ -212,7 +232,9 @@ fn check_inline_seq(
 
 fn check_inline(inline: &Inline, source_len: usize, context: &str) -> Result<(), String> {
     match &inline.kind {
-        InlineKind::Emph(children) | InlineKind::Strong(children) => check_inline_seq(
+        InlineKind::Emph(children)
+        | InlineKind::Strong(children)
+        | InlineKind::Strikethrough(children) => check_inline_seq(
             children,
             inline.span,
             source_len,

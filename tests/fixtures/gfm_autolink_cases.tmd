@@ -1,0 +1,14 @@
+Visit http://example.com and www.example.com.
+Email: user@example.com.
+Paren (http://example.com).
+Trailing http://example.com, and http://example.com).
+Path http://example.com/path.
+Query http://example.com/path?x=1&y=2.
+No link: abchttp://example.com.
+Www path www.example.com/test.
+Angle <http://example.com> ok.
+Bad www.
+Bracket http://example.com].
+Brace http://example.com}.
+Balanced http://example.com/path(foo).
+Bracketed http://example.com/path[1].
