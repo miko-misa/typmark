@@ -1,26 +1,57 @@
 # TypMark
 
-Rust core for TypMark with strict references, Typst math, and attributes.
+TypMark is a Rust core for an extended Markdown format with strict references, Typst math, and attributes.
+This repository ships a library and a CLI.
 
-## Workspace
-- crates/typmark-core: parse, resolve, and HTML emission
-- crates/typmark-cli: CLI
+## About TypMark
+TypMark is a Markdown based format with three core features.
+References are explicit and validated.
+Math is written in Typst syntax and rendered to SVG.
+Attributes can label and annotate blocks for styling and linking.
 
-## CLI
-TypMark CLI reads a TypMark file and writes HTML to stdout.
-Diagnostics are written to stderr.
-Exit code is 1 when any error diagnostic exists.
-CLI reference is in CLI.md.
-Japanese CLI reference is in CLI.ja.md.
-
-Example
+## Quick start
+Build and run the CLI on a file.
 ```
 cargo run -p typmark-cli -- --diagnostics pretty input.tmd
 ```
 
-## Reference
-TypMark language reference is in REFERENCE.md.
-Japanese reference is in REFERENCE.ja.md.
+Read from stdin and write HTML to a file.
+```
+cat input.tmd | cargo run -p typmark-cli -- > output.html
+```
+
+## Install
+TypMark CLI is built from source in this repository.
+
+Requirements
+- Rust toolchain
+
+Build
+```
+cargo build -p typmark-cli
+```
+
+Run
+```
+./target/debug/typmark-cli --diagnostics pretty input.tmd
+```
+
+## Usage
+TypMark CLI reads TypMark text and writes HTML to stdout.
+Diagnostics are written to stderr.
+Exit code is 1 when any error diagnostic exists.
+
+CLI reference
+- CLI.md
+- CLI.ja.md
+
+Language reference
+- REFERENCE.md
+- REFERENCE.ja.md
+
+## Workspace
+- crates/typmark-core: parse, resolve, and HTML emission
+- crates/typmark-cli: CLI
 
 ## Japanese
 README in Japanese is in README.ja.md.
