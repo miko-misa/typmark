@@ -23,6 +23,10 @@ Compatibility level:
 - Phase 0–1: CommonMark baseline.
 - Phase 2: GFM extensions.
 
+Note on autolinks:
+- GFM autolink literals are enabled in Phase 2, so bare URLs/emails are linked even when
+  CommonMark's autolink examples would render them as plain text.
+
 CommonMark notes (baseline behavior):
 - Raw HTML is parsed according to CommonMark's inline/block rules.
 - Backslash escapes and entity decoding follow CommonMark.
