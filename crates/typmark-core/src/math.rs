@@ -85,9 +85,7 @@ static TYPST_LIBRARY: Lazy<Prehashed<Library>> = Lazy::new(|| Prehashed::new(Lib
 static RENDER_CACHE: Lazy<Cache> = Lazy::new(|| Mutex::new(LruCache::new(100.try_into().unwrap())));
 
 /// Renders a Typst math snippet to an SVG string.
-
 /// Returns Ok(svg_string) on success, or Err(raw_source) on failure.
-
 pub fn render_math(source: &str, display: bool) -> Result<String, String> {
     let cache_key = (source.to_string(), display);
 

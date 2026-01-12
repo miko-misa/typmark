@@ -790,9 +790,7 @@ impl Parser {
         parse_inlines: bool,
     ) -> Option<(Block, usize)> {
         let line = &lines[start];
-        if blockquote_prefix_info(&line.text).is_none() {
-            return None;
-        }
+        blockquote_prefix_info(&line.text)?;
         let mut i = start;
         let mut quote_lines = Vec::new();
         let mut can_lazy = false;
@@ -841,11 +839,11 @@ impl Parser {
                     has_newline: candidate.has_newline,
                     lazy_continuation: false,
                 };
-                let list_allows_lazy = parse_list_marker(&line.text)
-                    .map(|marker| {
-                        remove_list_indent(&line.text, marker.marker_len, marker.content_indent)
-                    })
-                    .map_or(false, |rest| rest.trim_start().starts_with('>'));
+                let list_allows_lazy = parse_list_marker(&line.text).is_some_and(|marker| {
+                    remove_list_indent(&line.text, marker.marker_len, marker.content_indent)
+                        .trim_start()
+                        .starts_with('>')
+                });
                 can_lazy = self.line_can_continue_paragraph(&line)
                     || line.text.trim_start().starts_with('>')
                     || list_allows_lazy;
@@ -1011,11 +1009,11 @@ impl Parser {
                     continue;
                 }
                 if let Some(next_marker) = parse_list_marker(&next.text) {
-                    if next_marker.ordered == marker.ordered && next_marker.marker == marker.marker
+                    if next_marker.ordered == marker.ordered
+                        && next_marker.marker == marker.marker
+                        && !pending_blank.is_empty()
                     {
-                        if !pending_blank.is_empty() {
-                            list_has_blank = true;
-                        }
+                        list_has_blank = true;
                     }
                     break;
                 }
@@ -1147,7 +1145,7 @@ impl Parser {
                 start_offset += removed;
             }
             if idx + 1 == lines.len() {
-                text = text.trim_end_matches(|ch| ch == ' ' || ch == '\t');
+                text = text.trim_end_matches([' ', '\t']);
             }
             buffer.push_str(text);
             // Map each byte in the buffer back to the original source offset.
@@ -1250,9 +1248,7 @@ impl Parser {
                     if text_buf.is_empty() {
                         text_start = i;
                     }
-                    for _ in 0..run_len {
-                        text_buf.push(b'`');
-                    }
+                    text_buf.extend(std::iter::repeat(b'`').take(run_len));
                     i += run_len;
                     continue;
                 }
@@ -1930,6 +1926,7 @@ impl Parser {
         (inlines, had_newline)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn try_close_link(
         &mut self,
         buffer: &str,
@@ -2056,9 +2053,7 @@ impl Parser {
         let span = self.span_from_offsets(offsets, opener.start, close + 1);
 
         let mut children = out.split_off(opener.node_index + 1);
-        if out.pop().is_none() {
-            return None;
-        }
+        out.pop()?;
 
         let mut child_delims = Vec::new();
         let mut remaining = Vec::new();
@@ -2124,8 +2119,8 @@ impl Parser {
     fn process_emphasis(&self, out: &mut InlineSeq, delims: &mut Vec<Delimiter>) {
         loop {
             let mut closer_index = None;
-            for idx in 0..delims.len() {
-                if delims[idx].can_close {
+            for (idx, delim) in delims.iter().enumerate() {
+                if delim.can_close {
                     closer_index = Some(idx);
                     break;
                 }
@@ -2434,7 +2429,7 @@ impl Parser {
 
         for (start, end) in tokens {
             let token = &inner[start..end];
-            if token.starts_with('#') {
+            if let Some(name) = token.strip_prefix('#') {
                 if attrs.label.is_some() {
                     let span = Span {
                         start: base_offset + 1 + start,
@@ -2448,7 +2443,7 @@ impl Parser {
                     );
                     continue;
                 }
-                let name = token[1..].to_string();
+                let name = name.to_string();
                 if name.is_empty() || !is_valid_label(&name) {
                     let span = Span {
                         start: base_offset + 1 + start,
@@ -3119,17 +3114,18 @@ fn parse_atx_heading(text: &str) -> Option<(u8, usize, usize)> {
         while hash_start > content_start && bytes[hash_start - 1] == b'#' {
             hash_start -= 1;
         }
-        if hash_start < content_end && hash_start >= content_start {
-            if hash_start == content_start || is_space_or_tab(bytes[hash_start - 1]) {
-                let mut pre = hash_start;
-                if hash_start > content_start {
-                    pre = hash_start - 1;
-                    while pre > content_start && is_space_or_tab(bytes[pre - 1]) {
-                        pre -= 1;
-                    }
+        if hash_start < content_end
+            && hash_start >= content_start
+            && (hash_start == content_start || is_space_or_tab(bytes[hash_start - 1]))
+        {
+            let mut pre = hash_start;
+            if hash_start > content_start {
+                pre = hash_start - 1;
+                while pre > content_start && is_space_or_tab(bytes[pre - 1]) {
+                    pre -= 1;
                 }
-                content_end = pre;
             }
+            content_end = pre;
         }
     }
     while content_end > content_start && is_space_or_tab(bytes[content_end - 1]) {
@@ -3573,10 +3569,10 @@ fn split_table_cells(text: &str, base_offset: usize) -> (Vec<TableCellRaw>, bool
     cells.push(cell);
 
     if had_pipe && cells.len() > 1 {
-        if cells.first().map_or(false, |cell| cell.text.is_empty()) {
+        if cells.first().is_some_and(|cell| cell.text.is_empty()) {
             cells.remove(0);
         }
-        if cells.last().map_or(false, |cell| cell.text.is_empty()) {
+        if cells.last().is_some_and(|cell| cell.text.is_empty()) {
             cells.pop();
         }
     }
@@ -4544,10 +4540,16 @@ fn delimiter_properties(
         None
     };
 
-    let before_is_whitespace = before.map_or(true, |ch| ch.is_whitespace());
-    let after_is_whitespace = after.map_or(true, |ch| ch.is_whitespace());
-    let before_is_punctuation = before.map_or(false, is_unicode_punctuation);
-    let after_is_punctuation = after.map_or(false, is_unicode_punctuation);
+    let before_is_whitespace = match before {
+        Some(ch) => ch.is_whitespace(),
+        None => true,
+    };
+    let after_is_whitespace = match after {
+        Some(ch) => ch.is_whitespace(),
+        None => true,
+    };
+    let before_is_punctuation = before.is_some_and(is_unicode_punctuation);
+    let after_is_punctuation = after.is_some_and(is_unicode_punctuation);
 
     let left_flanking = !after_is_whitespace
         && (!after_is_punctuation || before_is_whitespace || before_is_punctuation);
@@ -5180,25 +5182,6 @@ fn has_unescaped_brackets(bytes: &[u8]) -> bool {
     false
 }
 
-#[cfg(test)]
-mod link_def_tests {
-    use super::{parse_link_reference_definition_lines, split_lines};
-    use crate::label::normalize_link_label;
-
-    #[test]
-    fn link_definition_with_backslashes_parses() {
-        let input = "[foo]: /url\\bar\\*baz \"foo\\\"bar\\baz\"\n";
-        let lines = split_lines(input);
-        let parsed = parse_link_reference_definition_lines(&lines, 0);
-        assert!(parsed.is_some(), "expected link definition to parse");
-    }
-
-    #[test]
-    fn normalize_label_eszett() {
-        assert_eq!(normalize_link_label("ẞ".as_bytes()), "ss");
-    }
-}
-
 fn decode_entity(bytes: &[u8], start: usize, end: usize) -> Option<(Vec<u8>, usize)> {
     if start + 2 >= end {
         return None;
@@ -5233,7 +5216,7 @@ fn decode_entity(bytes: &[u8], start: usize, end: usize) -> Option<(Vec<u8>, usi
         }
         let value = u32::from_str_radix(number_str, radix).ok()?;
         // CommonMark: invalid codepoints (0, surrogates, > 0x10FFFF) -> U+FFFD (replacement char)
-        let ch = if value == 0 || (value >= 0xD800 && value <= 0xDFFF) || value > 0x10FFFF {
+        let ch = if value == 0 || (0xD800..=0xDFFF).contains(&value) || value > 0x10FFFF {
             '\u{FFFD}'
         } else {
             std::char::from_u32(value).unwrap_or('\u{FFFD}')
@@ -5358,4 +5341,23 @@ fn is_autolink_email(value: &str) -> bool {
         }
     }
     dot && !domain.ends_with('.')
+}
+
+#[cfg(test)]
+mod link_def_tests {
+    use super::{parse_link_reference_definition_lines, split_lines};
+    use crate::label::normalize_link_label;
+
+    #[test]
+    fn link_definition_with_backslashes_parses() {
+        let input = "[foo]: /url\\bar\\*baz \"foo\\\"bar\\baz\"\n";
+        let lines = split_lines(input);
+        let parsed = parse_link_reference_definition_lines(&lines, 0);
+        assert!(parsed.is_some(), "expected link definition to parse");
+    }
+
+    #[test]
+    fn normalize_label_eszett() {
+        assert_eq!(normalize_link_label("ẞ".as_bytes()), "ss");
+    }
 }

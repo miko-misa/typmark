@@ -12,7 +12,7 @@ fn golden_fixtures() -> Result<(), Box<dyn std::error::Error>> {
     let expect_dir = root.join("tests/expect");
 
     let mut fixtures = collect_fixtures(&fixtures_dir, false)?;
-    fixtures.sort_by(|a, b| file_name(a).cmp(&file_name(b)));
+    fixtures.sort_by(|a, b| file_name(a).cmp(file_name(b)));
 
     for fixture in fixtures {
         let name = file_stem(&fixture)?;
@@ -67,7 +67,7 @@ fn golden_sanitized_fixtures() -> Result<(), Box<dyn std::error::Error>> {
     let expect_dir = root.join("tests/expect/sani");
 
     let mut fixtures = collect_fixtures(&fixtures_dir, true)?;
-    fixtures.sort_by(|a, b| file_name(a).cmp(&file_name(b)));
+    fixtures.sort_by(|a, b| file_name(a).cmp(file_name(b)));
 
     for fixture in fixtures {
         let name = file_stem(&fixture)?;

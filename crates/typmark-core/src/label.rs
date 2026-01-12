@@ -49,7 +49,7 @@ pub(crate) fn normalize_link_label(bytes: &[u8]) -> String {
         Err(err) => String::from_utf8_lossy(&err.into_bytes()).to_string(),
     };
     let lowered = normalized.to_lowercase();
-    lowered.replace('ß', "ss").replace('ẞ', "ss")
+    lowered.replace(['ß', 'ẞ'], "ss")
 }
 
 pub(crate) fn is_label_escape(byte: u8) -> bool {

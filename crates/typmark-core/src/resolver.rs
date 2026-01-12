@@ -41,7 +41,7 @@ pub fn resolve(
 ) -> ResolveResult {
     let mut document = document;
     // First, resolve CommonMark-style link references like [text][label].
-    resolve_link_refs(&mut document, source, source_map, link_defs);
+    resolve_link_refs(&mut document, source, link_defs);
 
     // Then, build the section tree for TypMark-style header/section linking.
     document.blocks = build_sections(document.blocks);
@@ -60,45 +60,43 @@ pub fn resolve(
 fn resolve_link_refs(
     document: &mut Document,
     source: &str,
-    source_map: &SourceMap,
     link_defs: &HashMap<String, LinkDefinition>,
 ) {
-    resolve_link_refs_in_blocks(&mut document.blocks, source, source_map, link_defs);
+    resolve_link_refs_in_blocks(&mut document.blocks, source, link_defs);
 }
 
 fn resolve_link_refs_in_blocks(
     blocks: &mut [Block],
     source: &str,
-    source_map: &SourceMap,
     link_defs: &HashMap<String, LinkDefinition>,
 ) {
     for block in blocks {
         match &mut block.kind {
             BlockKind::Paragraph { content } => {
-                resolve_link_refs_inlines(content, source, source_map, link_defs);
+                resolve_link_refs_inlines(content, source, link_defs);
             }
             BlockKind::Heading { title, .. } => {
-                resolve_link_refs_inlines(title, source, source_map, link_defs);
+                resolve_link_refs_inlines(title, source, link_defs);
             }
             BlockKind::Section {
                 title, children, ..
             } => {
-                resolve_link_refs_inlines(title, source, source_map, link_defs);
-                resolve_link_refs_in_blocks(children, source, source_map, link_defs);
+                resolve_link_refs_inlines(title, source, link_defs);
+                resolve_link_refs_in_blocks(children, source, link_defs);
             }
             BlockKind::BlockQuote { blocks } => {
-                resolve_link_refs_in_blocks(blocks, source, source_map, link_defs);
+                resolve_link_refs_in_blocks(blocks, source, link_defs);
             }
             BlockKind::List(List { items, .. }) => {
                 for item in items {
-                    resolve_link_refs_in_blocks(&mut item.blocks, source, source_map, link_defs);
+                    resolve_link_refs_in_blocks(&mut item.blocks, source, link_defs);
                 }
             }
             BlockKind::Box(BoxBlock { title, blocks }) => {
                 if let Some(title) = title.as_mut() {
-                    resolve_link_refs_inlines(title, source, source_map, link_defs);
+                    resolve_link_refs_inlines(title, source, link_defs);
                 }
-                resolve_link_refs_in_blocks(blocks, source, source_map, link_defs);
+                resolve_link_refs_in_blocks(blocks, source, link_defs);
             }
             _ => {}
         }
@@ -108,7 +106,6 @@ fn resolve_link_refs_in_blocks(
 fn resolve_link_refs_inlines(
     inlines: &mut InlineSeq,
     source: &str,
-    source_map: &SourceMap,
     link_defs: &HashMap<String, LinkDefinition>,
 ) {
     let mut idx = 0;
@@ -122,7 +119,7 @@ fn resolve_link_refs_inlines(
                     children,
                     meta,
                 } => {
-                    resolve_link_refs_inlines(children, source, source_map, link_defs);
+                    resolve_link_refs_inlines(children, source, link_defs);
                     let normalized_label = normalize_link_label(label.as_bytes());
                     if let Some(def) = link_defs.get(&normalized_label) {
                         let children = std::mem::take(children);
@@ -139,7 +136,7 @@ fn resolve_link_refs_inlines(
                     }
                 }
                 InlineKind::ImageRef { label, alt, meta } => {
-                    resolve_link_refs_inlines(alt, source, source_map, link_defs);
+                    resolve_link_refs_inlines(alt, source, link_defs);
                     let normalized_label = normalize_link_label(label.as_bytes());
                     if let Some(def) = link_defs.get(&normalized_label) {
                         let alt = std::mem::take(alt);
@@ -152,17 +149,17 @@ fn resolve_link_refs_inlines(
                     }
                 }
                 InlineKind::Emph(children) | InlineKind::Strong(children) => {
-                    resolve_link_refs_inlines(children, source, source_map, link_defs);
+                    resolve_link_refs_inlines(children, source, link_defs);
                 }
                 InlineKind::Link { children, .. } => {
-                    resolve_link_refs_inlines(children, source, source_map, link_defs);
+                    resolve_link_refs_inlines(children, source, link_defs);
                 }
                 InlineKind::Image { alt, .. } => {
-                    resolve_link_refs_inlines(alt, source, source_map, link_defs);
+                    resolve_link_refs_inlines(alt, source, link_defs);
                 }
                 InlineKind::Ref { bracket, .. } => {
                     if let Some(bracket) = bracket.as_mut() {
-                        resolve_link_refs_inlines(bracket, source, source_map, link_defs);
+                        resolve_link_refs_inlines(bracket, source, link_defs);
                     }
                 }
                 _ => {}
@@ -306,16 +303,18 @@ fn check_self_reference_titles(
 ) {
     for block in blocks {
         match &block.kind {
-            BlockKind::Section { title, label, .. } => {
-                if let Some(label) = label {
-                    if let Some(span) = find_self_ref(title, &label.name) {
-                        diagnostics.push(Diagnostic::new(
-                            source_map.range(span),
-                            DiagnosticSeverity::Error,
-                            E_REF_SELF_TITLE,
-                            "self-reference in title",
-                        ));
-                    }
+            BlockKind::Section {
+                title,
+                label: Some(label),
+                ..
+            } => {
+                if let Some(span) = find_self_ref(title, &label.name) {
+                    diagnostics.push(Diagnostic::new(
+                        source_map.range(span),
+                        DiagnosticSeverity::Error,
+                        E_REF_SELF_TITLE,
+                        "self-reference in title",
+                    ));
                 }
             }
             BlockKind::Box(BoxBlock {

@@ -354,7 +354,7 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
                         writer.out.push_str(&"  ".repeat(writer.indent));
                         writer.out.push_str("<li");
                         writer.out.push_str(task_class);
-                        writer.out.push_str(">");
+                        writer.out.push('>');
                         if let Some(prefix) = &task_prefix {
                             writer.out.push_str(prefix);
                         }
@@ -430,7 +430,7 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
             emit_table(writer, table);
         }
         BlockKind::Box(BoxBlock { title, blocks }) => {
-            let mut attrs = format!("class=\"TypMark-box\" data-typmark=\"box\"");
+            let mut attrs = "class=\"TypMark-box\" data-typmark=\"box\"".to_string();
             if let Some(label) = block.attrs.label.as_ref() {
                 attrs.push_str(&format!(" id=\"{}\"", escape_attr(&label.name)));
             }
