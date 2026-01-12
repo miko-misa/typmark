@@ -263,7 +263,7 @@ Special rule:
 
 ## 11. Code Blocks (Extended)
 
-TypMark inherits fenced code blocks from Markdown (CommonMark/GFM). A fenced code block begins with a line of three backticks and ends with a matching fence.
+TypMark inherits fenced code blocks from Markdown (CommonMark/GFM). A fenced code block begins with a line of three backticks or tildes and ends with a matching fence.
 
 ```md
 ```c
@@ -275,7 +275,7 @@ int main(void) { return 0; }
 
 ### 11.1 Fence Line: Language + Attribute List
 
-TypMark extends the *fence opening line* (the first ``` line) by allowing an optional **attribute list** after the language token.
+TypMark extends the *fence opening line* (the first ```/~~~ line) by allowing an optional **attribute list** after the language token.
 
 ```md
 ```c {hl="1,4:printf" diff_del="7" diff_add="8"}

@@ -25,6 +25,14 @@ int b = 2;
    gamma
    ```
 
+~~~rust {#tilde}
+let a = "```";
+~~~
+
+~~~lang~ {#tilde2}
+alpha
+~~~
+
     a simple
       indented code block
 

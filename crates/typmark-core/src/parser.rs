@@ -473,14 +473,14 @@ impl Parser {
 
     fn parse_code_block(&mut self, lines: &[Line], start: usize) -> Option<(Block, usize)> {
         let line = &lines[start];
-        let (indent_len, fence_len, info) = parse_fence_open(&line.text)?;
+        let (indent_len, fence_len, fence_char, info) = parse_fence_open(&line.text)?;
         let (lang, info_attrs) = self.parse_fence_info(line, fence_len, info);
 
         let mut code_lines: Vec<String> = Vec::new();
         let mut i = start + 1;
         while i < lines.len() {
             let candidate = &lines[i];
-            if is_fence_close(&candidate.text, fence_len) {
+            if is_fence_close(&candidate.text, fence_len, fence_char) {
                 i += 1;
                 break;
             }
@@ -645,16 +645,21 @@ impl Parser {
         while i < lines.len() {
             let candidate = &lines[i];
             let trimmed = candidate.text.trim();
-            if let Some((_, inner_fence_len, _)) = parse_fence_open(&candidate.text) {
+            if let Some((_, inner_fence_len, fence_char, _)) = parse_fence_open(&candidate.text) {
                 inner_lines.push(candidate.clone());
                 i += 1;
                 while i < lines.len() {
                     let inner = &lines[i];
                     inner_lines.push(inner.clone());
                     let inner_trimmed = inner.text.trim();
-                    let backticks = inner_trimmed.chars().take_while(|c| *c == '`').count();
+                    let fence_count = inner_trimmed
+                        .chars()
+                        .take_while(|c| *c as u8 == fence_char)
+                        .count();
                     i += 1;
-                    if backticks >= inner_fence_len && inner_trimmed.chars().all(|c| c == '`') {
+                    if fence_count >= inner_fence_len
+                        && inner_trimmed.chars().all(|c| c as u8 == fence_char)
+                    {
                         break;
                     }
                 }
@@ -1142,7 +1147,10 @@ impl Parser {
             }
             if removed > 0 {
                 text = &text[removed..];
-                start_offset += removed;
+                start_offset = start_offset.saturating_add(removed);
+            }
+            if start_offset > line.end {
+                start_offset = line.end;
             }
             if idx + 1 == lines.len() {
                 text = text.trim_end_matches([' ', '\t']);
@@ -1150,7 +1158,15 @@ impl Parser {
             buffer.push_str(text);
             // Map each byte in the buffer back to the original source offset.
             for byte_idx in 0..text.len() {
-                offsets.push(start_offset + byte_idx);
+                let max_len = line.end.saturating_sub(start_offset);
+                let offset = if byte_idx < max_len {
+                    start_offset + byte_idx
+                } else if line.end > 0 {
+                    line.end - 1
+                } else {
+                    0
+                };
+                offsets.push(offset);
             }
             if line.has_newline && idx + 1 < lines.len() {
                 buffer.push('\n');
@@ -2925,7 +2941,7 @@ fn strip_indent_up_to(text: &str, max_cols: usize) -> Option<&str> {
     Some(&text[idx..])
 }
 
-fn parse_fence_open(text: &str) -> Option<(usize, usize, String)> {
+fn parse_fence_open(text: &str) -> Option<(usize, usize, u8, String)> {
     let bytes = text.as_bytes();
     let mut idx = 0;
     while idx < bytes.len() && idx < 3 && bytes[idx] == b' ' {
@@ -2935,20 +2951,28 @@ fn parse_fence_open(text: &str) -> Option<(usize, usize, String)> {
         return None;
     }
     let rest = &text[idx..];
-    if !rest.starts_with("```") {
+    let fence_char = if rest.starts_with("```") {
+        b'`'
+    } else if rest.starts_with("~~~") {
+        b'~'
+    } else {
         return None;
-    }
-    let fence_len = rest.as_bytes().iter().take_while(|b| **b == b'`').count();
+    };
+    let fence_len = rest
+        .as_bytes()
+        .iter()
+        .take_while(|b| **b == fence_char)
+        .count();
     if fence_len < 3 {
         return None;
     }
     let info = rest[fence_len..].trim_matches(|ch| ch == ' ' || ch == '\t');
-    if info.contains('`') {
+    if fence_char == b'`' && info.contains('`') {
         return None;
     }
     // Process backslash escapes and entities in info string
     let info_decoded = unescape_and_decode(info);
-    Some((idx, fence_len, info_decoded))
+    Some((idx, fence_len, fence_char, info_decoded))
 }
 
 fn unescape_and_decode(text: &str) -> String {
@@ -3024,7 +3048,7 @@ fn unescape_and_decode(text: &str) -> String {
     result
 }
 
-fn is_fence_close(text: &str, fence_len: usize) -> bool {
+fn is_fence_close(text: &str, fence_len: usize, fence_char: u8) -> bool {
     let bytes = text.as_bytes();
     let mut idx = 0;
     while idx < bytes.len() && idx < 3 && bytes[idx] == b' ' {
@@ -3036,7 +3060,7 @@ fn is_fence_close(text: &str, fence_len: usize) -> bool {
     let rest = &text[idx..];
     let rest_bytes = rest.as_bytes();
     let mut count = 0;
-    while count < rest_bytes.len() && rest_bytes[count] == b'`' {
+    while count < rest_bytes.len() && rest_bytes[count] == fence_char {
         count += 1;
     }
     if count < fence_len {
@@ -3766,6 +3790,12 @@ fn split_autolinks(text: &str, span: Span) -> InlineSeq {
     let mut out = Vec::new();
     let mut i = 0usize;
     let mut last = 0usize;
+    let base_start = span.start;
+    let base_end = span.end;
+    let clamp = |offset: usize| {
+        let pos = base_start.saturating_add(offset);
+        if pos > base_end { base_end } else { pos }
+    };
     while i < bytes.len() {
         if !text.is_char_boundary(i) {
             i += 1;
@@ -3774,8 +3804,8 @@ fn split_autolinks(text: &str, span: Span) -> InlineSeq {
         if let Some(link) = match_autolink_literal(text, i) {
             if link.start > last {
                 let span = Span {
-                    start: span.start + last,
-                    end: span.start + link.start,
+                    start: clamp(last),
+                    end: clamp(link.start),
                 };
                 out.push(Inline {
                     span,
@@ -3783,12 +3813,12 @@ fn split_autolinks(text: &str, span: Span) -> InlineSeq {
                 });
             }
             let link_span = Span {
-                start: span.start + link.start,
-                end: span.start + link.end,
+                start: clamp(link.start),
+                end: clamp(link.end),
             };
             let child_span = Span {
-                start: span.start + link.start,
-                end: span.start + link.end,
+                start: clamp(link.start),
+                end: clamp(link.end),
             };
             out.push(Inline {
                 span: link_span,
@@ -3810,8 +3840,8 @@ fn split_autolinks(text: &str, span: Span) -> InlineSeq {
     if last < bytes.len() {
         out.push(Inline {
             span: Span {
-                start: span.start + last,
-                end: span.start + bytes.len(),
+                start: clamp(last),
+                end: clamp(bytes.len()),
             },
             kind: InlineKind::Text(text[last..].to_string()),
         });
@@ -3975,13 +4005,18 @@ fn build_autolink(
 fn contains_html_closing_tag(line: &str, tag: &str) -> bool {
     let lower = line.to_ascii_lowercase();
     let needle = format!("</{}", tag);
-    if let Some(pos) = lower.find(&needle) {
-        let rest = &lower[pos + needle.len()..];
+    let mut search = 0usize;
+    while let Some(pos) = lower[search..].find(&needle) {
+        let idx = search + pos;
+        let rest = &lower[idx + needle.len()..];
         if rest.is_empty() {
             return true;
         }
         let b = rest.as_bytes()[0];
-        return b == b'>' || b.is_ascii_whitespace();
+        if b == b'>' || b.is_ascii_whitespace() {
+            return true;
+        }
+        search = idx + needle.len();
     }
     false
 }
