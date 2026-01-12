@@ -588,11 +588,28 @@ fn build_reference_text_from_inlines(
                     kind: InlineKind::Strong(inner),
                 });
             }
-            InlineKind::Link { children, .. } | InlineKind::LinkRef { children, .. } => {
+            InlineKind::LinkRef { children, .. } => {
                 let (inner, inner_exceeded) =
                     build_reference_text_from_inlines(children, labels, depth, visited);
                 exceeded |= inner_exceeded;
                 out.extend(inner);
+            }
+            InlineKind::Link {
+                url,
+                title,
+                children,
+            } => {
+                let (inner, inner_exceeded) =
+                    build_reference_text_from_inlines(children, labels, depth, visited);
+                exceeded |= inner_exceeded;
+                out.push(Inline {
+                    span: inline.span,
+                    kind: InlineKind::Link {
+                        url: url.clone(),
+                        title: title.clone(),
+                        children: inner,
+                    },
+                });
             }
             InlineKind::Image { alt, .. } | InlineKind::ImageRef { alt, .. } => {
                 let (inner, inner_exceeded) =
@@ -601,12 +618,30 @@ fn build_reference_text_from_inlines(
                 out.extend(inner);
             }
             InlineKind::Ref { label, bracket, .. } => {
-                if let Some(bracket) = bracket {
+                let (resolved, display) = match labels.get(&label.name) {
+                    Some(info) => {
+                        let resolved = match info.kind {
+                            LabelKind::CodeLine => ResolvedRef::CodeLine {
+                                label: label.name.clone(),
+                            },
+                            _ => ResolvedRef::Block {
+                                label: label.name.clone(),
+                                display: None,
+                            },
+                        };
+                        (Some(resolved), info.kind)
+                    }
+                    None => (None, LabelKind::Block),
+                };
+                let mut resolved = resolved;
+                let mut bracket = bracket.clone();
+                let mut display_seq = None;
+                if let Some(bracket) = bracket.as_mut() {
                     let (inner, inner_exceeded) =
                         build_reference_text_from_inlines(bracket, labels, depth, visited);
                     exceeded |= inner_exceeded;
-                    out.extend(inner);
-                } else {
+                    *bracket = inner;
+                } else if display == LabelKind::Title {
                     let (inner, inner_exceeded) = build_reference_text_inner(
                         &label.name,
                         labels,
@@ -615,8 +650,21 @@ fn build_reference_text_from_inlines(
                         inline.span,
                     );
                     exceeded |= inner_exceeded;
-                    out.extend(inner);
+                    display_seq = Some(inner);
                 }
+                if let (Some(ResolvedRef::Block { display, .. }), Some(seq)) =
+                    (resolved.as_mut(), display_seq)
+                {
+                    *display = Some(seq);
+                }
+                out.push(Inline {
+                    span: inline.span,
+                    kind: InlineKind::Ref {
+                        label: label.clone(),
+                        bracket,
+                        resolved,
+                    },
+                });
             }
             InlineKind::HtmlSpan { raw } => {
                 out.push(Inline {

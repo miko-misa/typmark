@@ -20,7 +20,10 @@ pub use diagnostic::{
     E_REF_BRACKET_NL, E_REF_DEPTH, E_REF_OMIT, E_REF_SELF_TITLE, E_TARGET_ORPHAN,
     RelatedDiagnostic, W_BOX_STYLE_INVALID, W_CODE_RANGE_OOB, W_REF_MISSING,
 };
-pub use emit::{HtmlEmitOptions, emit_html, emit_html_sanitized, emit_html_with_options};
+pub use emit::{
+    HtmlEmitOptions, emit_html, emit_html_sanitized, emit_html_sanitized_with_options,
+    emit_html_with_options,
+};
 pub use parser::{ParseResult, parse};
 pub use resolver::{ResolveResult, resolve};
 pub use source_map::{Position, Range, SourceMap};

@@ -1,0 +1,10 @@
+{#para foo=bar}
+Paragraph with attrs.
+
+{#tbl note=keep}
+| a | b |
+| --- | --- |
+| 1 | 2 |
+
+{#raw kind=html}
+<div>Raw</div>

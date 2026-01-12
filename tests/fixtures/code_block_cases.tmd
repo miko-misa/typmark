@@ -2,6 +2,10 @@
 int main(void) {}
 ```
 
+```rs {note=keep flag="on"}
+let x = 1;
+```
+
 ```c {hl="2:printf"}
 int a = 1;
 printf("hi");

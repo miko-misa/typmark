@@ -1,10 +1,30 @@
 use crate::ast::{
-    Block, BlockKind, BoxBlock, CodeBlock, CodeMeta, Inline, InlineKind, Label, LineRange, List,
-    ResolvedRef, Table, TableAlign,
+    AttrItem, Block, BlockKind, BoxBlock, CodeBlock, CodeMeta, Inline, InlineKind, Label,
+    LineRange, List, ResolvedRef, Table, TableAlign,
 };
 use crate::math::render_math;
 use ammonia::Builder;
 use std::collections::{HashMap, HashSet};
+
+const SVG_ALLOWED_TAGS: &[&str] = &["svg", "g", "defs", "path", "clipPath", "use"];
+
+const SVG_ALLOWED_ATTRS: &[(&str, &[&str])] = &[
+    ("svg", &["xmlns", "viewBox", "width", "height", "class"]),
+    (
+        "g",
+        &[
+            "transform",
+            "fill",
+            "stroke",
+            "stroke-width",
+            "clip-path",
+            "class",
+        ],
+    ),
+    ("path", &["d", "fill", "stroke", "stroke-width", "class"]),
+    ("clipPath", &["id"]),
+    ("use", &["href", "xlink:href"]),
+];
 
 /// Options for HTML emission.
 #[derive(Debug, Clone)]
@@ -44,8 +64,17 @@ pub fn emit_html_with_options(blocks: &[Block], options: &HtmlEmitOptions) -> St
 /// Emits HTML from a slice of blocks and sanitizes it according to a safe allow-list.
 pub fn emit_html_sanitized(blocks: &[Block]) -> String {
     let raw_html = emit_html(blocks);
+    sanitize_html(&raw_html)
+}
 
-    let tags: HashSet<&'static str> = [
+/// Emits HTML from a slice of blocks with custom options and sanitizes it.
+pub fn emit_html_sanitized_with_options(blocks: &[Block], options: &HtmlEmitOptions) -> String {
+    let raw_html = emit_html_with_options(blocks, options);
+    sanitize_html(&raw_html)
+}
+
+fn sanitize_html(raw_html: &str) -> String {
+    let mut tags: HashSet<&'static str> = [
         // Standard tags
         "a",
         "abbr",
@@ -89,13 +118,7 @@ pub fn emit_html_sanitized(blocks: &[Block]) -> String {
         "td",
         "input",
         "figure",
-        "span", // SVG tags from core.md
-        "svg",
-        "g",
-        "defs",
-        "path",
-        "clipPath",
-        "use",
+        "span",
     ]
     .iter()
     .copied()
@@ -143,36 +166,12 @@ pub fn emit_html_sanitized(blocks: &[Block]) -> String {
     );
 
     // SVG attributes from core.md
-    tag_attributes.insert(
-        "svg",
-        ["xmlns", "viewBox", "width", "height", "class"]
-            .iter()
-            .copied()
-            .collect(),
-    );
-    tag_attributes.insert(
-        "g",
-        [
-            "transform",
-            "fill",
-            "stroke",
-            "stroke-width",
-            "clip-path",
-            "class",
-        ]
-        .iter()
-        .copied()
-        .collect(),
-    );
-    tag_attributes.insert(
-        "path",
-        ["d", "fill", "stroke", "stroke-width", "class"]
-            .iter()
-            .copied()
-            .collect(),
-    );
-    tag_attributes.insert("clipPath", ["id"].iter().copied().collect());
-    tag_attributes.insert("use", ["href", "xlink:href"].iter().copied().collect());
+    for tag in SVG_ALLOWED_TAGS {
+        tags.insert(*tag);
+    }
+    for (tag, attrs) in SVG_ALLOWED_ATTRS {
+        tag_attributes.insert(*tag, attrs.iter().copied().collect());
+    }
 
     // Box attributes (data-bg, data-border-style, etc.)
     tag_attributes.insert(
@@ -200,7 +199,7 @@ pub fn emit_html_sanitized(blocks: &[Block]) -> String {
         .generic_attributes(generic_attributes)
         .tag_attributes(tag_attributes)
         .generic_attribute_prefixes(generic_attribute_prefixes)
-        .clean(&raw_html)
+        .clean(raw_html)
         .to_string()
 }
 
@@ -251,8 +250,8 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
             children,
         } => {
             if writer.options.wrap_sections {
-                let id = id_attr(label.as_ref());
-                writer.line(&format!("<section{}>", id));
+                let attrs = compose_block_attrs(label.as_ref(), &block.attrs.items);
+                writer.line(&format!("<section{}>", attrs));
                 writer.indent += 1;
                 let heading = format!(
                     "<h{}>{}</h{}>",
@@ -268,11 +267,11 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
                 writer.line("</section>");
             } else {
                 // CommonMark-compatible: just emit heading without wrapper
-                let id = id_attr(label.as_ref());
+                let attrs = compose_block_attrs(label.as_ref(), &block.attrs.items);
                 writer.line(&format!(
                     "<h{}{}>{}</h{}>",
                     level,
-                    id,
+                    attrs,
                     render_inlines_with_context(title, RenderContext::Title),
                     level
                 ));
@@ -282,26 +281,26 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
             }
         }
         BlockKind::Heading { level, title } => {
-            let id = id_attr(block.attrs.label.as_ref());
+            let attrs = compose_block_attrs(block.attrs.label.as_ref(), &block.attrs.items);
             writer.line(&format!(
                 "<h{}{}>{}</h{}>",
                 level,
-                id,
+                attrs,
                 render_inlines_with_context(title, RenderContext::Title),
                 level
             ));
         }
         BlockKind::Paragraph { content } => {
-            let id = id_attr(block.attrs.label.as_ref());
+            let attrs = compose_block_attrs(block.attrs.label.as_ref(), &block.attrs.items);
             writer.line(&format!(
                 "<p{}>{}</p>",
-                id,
+                attrs,
                 render_inlines_with_context(content, RenderContext::Normal)
             ));
         }
         BlockKind::BlockQuote { blocks } => {
-            let id = id_attr(block.attrs.label.as_ref());
-            writer.line(&format!("<blockquote{}>", id));
+            let attrs = compose_block_attrs(block.attrs.label.as_ref(), &block.attrs.items);
+            writer.line(&format!("<blockquote{}>", attrs));
             writer.indent += 1;
             for child in blocks {
                 emit_block(writer, child);
@@ -317,7 +316,7 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
             ..
         }) => {
             let tag = if *ordered { "ol" } else { "ul" };
-            let id = id_attr(block.attrs.label.as_ref());
+            let attrs = compose_block_attrs(block.attrs.label.as_ref(), &block.attrs.items);
             let start_attr = if *ordered {
                 start
                     .filter(|&value| value != 1) // Omit start="1" (default value)
@@ -332,7 +331,7 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
             } else {
                 ""
             };
-            writer.line(&format!("<{}{}{}{}>", tag, id, start_attr, list_class));
+            writer.line(&format!("<{}{}{}{}>", tag, attrs, start_attr, list_class));
             writer.indent += 1;
             for item in items {
                 let task_prefix = item.task.map(task_input_html);
@@ -427,7 +426,8 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
             writer.line(&format!("</{}>", tag));
         }
         BlockKind::Table(table) => {
-            emit_table(writer, table);
+            let attrs = compose_block_attrs(block.attrs.label.as_ref(), &block.attrs.items);
+            emit_table(writer, table, &attrs);
         }
         BlockKind::Box(BoxBlock { title, blocks }) => {
             let mut attrs = "class=\"TypMark-box\" data-typmark=\"box\"".to_string();
@@ -460,36 +460,53 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
             writer.line("</div>");
         }
         BlockKind::MathBlock { typst_src } => {
-            let id = id_attr(block.attrs.label.as_ref());
+            let attrs = compose_block_attrs(block.attrs.label.as_ref(), &block.attrs.items);
             match render_math(typst_src, true) {
                 Ok(svg) => writer.line(&format!(
                     "<div class=\"TypMark-math-block\"{}>{}</div>",
-                    id, svg
+                    attrs, svg
                 )),
                 Err(source) => writer.line(&format!(
                     "<div class=\"TypMark-math-block--error\"{}>{}</div>",
-                    id,
+                    attrs,
                     escape_text(&source)
                 )),
             }
         }
         BlockKind::ThematicBreak => {
-            let id = id_attr(block.attrs.label.as_ref());
-            writer.line(&format!("<hr{} />", id));
+            let attrs = compose_block_attrs(block.attrs.label.as_ref(), &block.attrs.items);
+            writer.line(&format!("<hr{} />", attrs));
         }
         BlockKind::CodeBlock(CodeBlock {
-            lang, meta, text, ..
+            lang,
+            info_attrs,
+            meta,
+            text,
         }) => {
             emit_code_block(
                 writer,
                 lang.as_deref(),
+                &info_attrs.items,
                 meta,
                 text,
                 block.attrs.label.as_ref(),
+                &block.attrs.items,
             );
         }
         BlockKind::HtmlBlock { raw } => {
-            writer.line(raw);
+            let attrs = compose_block_attrs(block.attrs.label.as_ref(), &block.attrs.items);
+            if attrs.is_empty() {
+                writer.line(raw);
+            } else {
+                writer.line(&format!(
+                    "<div class=\"TypMark-html\" data-typmark=\"html\"{}>",
+                    attrs
+                ));
+                writer.indent += 1;
+                writer.line(raw);
+                writer.indent -= 1;
+                writer.line("</div>");
+            }
         }
     }
 }
@@ -509,8 +526,8 @@ fn emit_block_tight(writer: &mut HtmlWriter, block: &Block) -> bool {
             children,
         } => {
             if writer.options.wrap_sections {
-                let id = id_attr(label.as_ref());
-                writer.line(&format!("<section{}>", id));
+                let attrs = compose_block_attrs(label.as_ref(), &block.attrs.items);
+                writer.line(&format!("<section{}>", attrs));
                 writer.indent += 1;
                 let heading = format!(
                     "<h{}>{}</h{}>",
@@ -529,11 +546,11 @@ fn emit_block_tight(writer: &mut HtmlWriter, block: &Block) -> bool {
                 writer.line("</section>");
                 true
             } else {
-                let id = id_attr(label.as_ref());
+                let attrs = compose_block_attrs(label.as_ref(), &block.attrs.items);
                 writer.line(&format!(
                     "<h{}{}>{}</h{}>",
                     level,
-                    id,
+                    attrs,
                     render_inlines_with_context(title, RenderContext::Title),
                     level
                 ));
@@ -558,10 +575,14 @@ fn emit_block_tight(writer: &mut HtmlWriter, block: &Block) -> bool {
 fn emit_code_block(
     writer: &mut HtmlWriter,
     lang: Option<&str>,
+    info_items: &[AttrItem],
     meta: &CodeMeta,
     text: &str,
     label: Option<&Label>,
+    items: &[AttrItem],
 ) {
+    let mut attrs = compose_block_attrs(label, items);
+    attrs.push_str(&data_attrs(info_items));
     if writer.options.simple_code_blocks {
         // CommonMark-compatible simple output
         // Use code-specific escaping for code contents.
@@ -569,7 +590,9 @@ fn emit_code_block(
         let lang_class = lang
             .map(|l| format!(" class=\"language-{}\"", escape_attr(l)))
             .unwrap_or_default();
-        writer.out.push_str(&format!("<pre><code{}>", lang_class));
+        writer
+            .out
+            .push_str(&format!("<pre{}><code{}>", attrs, lang_class));
         writer.out.push_str(&escaped);
         // Only add newline if text is non-empty and doesn't already end with one
         if !escaped.is_empty() && !escaped.ends_with('\n') {
@@ -583,14 +606,16 @@ fn emit_code_block(
             && meta.diff_add.is_empty()
             && meta.diff_del.is_empty()
             && meta.line_labels.is_empty()
-            && label.is_none();
+            && label.is_none()
+            && items.is_empty()
+            && info_items.is_empty();
 
         if is_simple {
             // Emit simple CommonMark-style pre/code for indented code blocks
             // Use code-specific escaping for code contents.
             let escaped = escape_html_code(text);
             // Write as single line without indentation for CommonMark compatibility
-            writer.out.push_str("<pre><code>");
+            writer.out.push_str(&format!("<pre{}><code>", attrs));
             writer.out.push_str(&escaped);
             // Only add newline if text is non-empty and doesn't already end with one
             if !escaped.is_empty() && !escaped.ends_with('\n') {
@@ -602,10 +627,9 @@ fn emit_code_block(
             let lang_attr = lang
                 .map(|value| format!(" data-lang=\"{}\"", escape_attr(value)))
                 .unwrap_or_default();
-            let id = id_attr(label);
             writer.line(&format!(
                 "<figure class=\"TypMark-codeblock\" data-typmark=\"codeblock\"{}{}>",
-                id, lang_attr
+                attrs, lang_attr
             ));
             writer.indent += 1;
             writer.line("<pre class=\"TypMark-pre\">");
@@ -866,8 +890,8 @@ fn emit_paragraph_with_prefix(writer: &mut HtmlWriter, content: &[Inline], prefi
     writer.out.push_str("</p>\n");
 }
 
-fn emit_table(writer: &mut HtmlWriter, table: &Table) {
-    writer.line("<table>");
+fn emit_table(writer: &mut HtmlWriter, table: &Table, attrs: &str) {
+    writer.line(&format!("<table{}>", attrs));
     writer.indent += 1;
     writer.line("<thead>");
     writer.indent += 1;
@@ -1036,8 +1060,99 @@ fn escape_url_attr(text: &str) -> String {
     escape_attr(&encoded)
 }
 
+fn data_attrs(items: &[AttrItem]) -> String {
+    let mut out = String::new();
+    for item in items {
+        out.push_str(&format!(
+            " data-{}=\"{}\"",
+            escape_attr(&item.key),
+            escape_attr(&item.value.raw)
+        ));
+    }
+    out
+}
+
+fn compose_block_attrs(label: Option<&Label>, items: &[AttrItem]) -> String {
+    let mut out = id_attr(label);
+    out.push_str(&data_attrs(items));
+    out
+}
+
 fn id_attr(label: Option<&Label>) -> String {
     label
         .map(|label| format!(" id=\"{}\"", escape_attr(&label.name)))
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SVG_ALLOWED_ATTRS, SVG_ALLOWED_TAGS};
+    use crate::math::render_math;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    fn collect_svg_tags(svg: &str) -> BTreeMap<String, BTreeSet<String>> {
+        let document = roxmltree::Document::parse(svg).expect("parse svg");
+        let mut tags: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+
+        for node in document.descendants().filter(|node| node.is_element()) {
+            let tag = node.tag_name().name().to_string();
+            let entry = tags.entry(tag).or_default();
+            for attr in node.attributes() {
+                entry.insert(attr.name().to_string());
+            }
+        }
+
+        tags
+    }
+
+    #[test]
+    fn svg_allowlist_matches_rendered_math() {
+        let samples = [
+            "x",
+            "x^2",
+            "a/b",
+            "sqrt(2)",
+            "sum_(i=1)^n i",
+            "int_0^1 x^2 dx",
+            "vec(a, b, c)",
+            "matrix((1,2),(3,4))",
+            "cases(1, x > 0; 0, x <= 0)",
+        ];
+
+        let mut observed: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let mut rendered_any = false;
+        for display in [false, true] {
+            for sample in samples {
+                if let Ok(svg) = render_math(sample, display) {
+                    rendered_any = true;
+                    let tags = collect_svg_tags(&svg);
+                    for (tag, attrs) in tags {
+                        observed.entry(tag).or_default().extend(attrs);
+                    }
+                }
+            }
+        }
+
+        if !rendered_any {
+            eprintln!("svg allowlist test skipped: math rendering unavailable");
+            return;
+        }
+
+        let expected_tags: BTreeSet<String> = SVG_ALLOWED_TAGS
+            .iter()
+            .map(|tag| (*tag).to_string())
+            .collect();
+        let observed_tags: BTreeSet<String> = observed.keys().cloned().collect();
+        assert_eq!(observed_tags, expected_tags, "SVG tag allowlist mismatch");
+
+        let mut expected_attrs: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for (tag, attrs) in SVG_ALLOWED_ATTRS {
+            let entry = expected_attrs.entry((*tag).to_string()).or_default();
+            for attr in *attrs {
+                entry.insert((*attr).to_string());
+            }
+        }
+
+        assert_eq!(observed, expected_attrs, "SVG attribute allowlist mismatch");
+    }
 }
