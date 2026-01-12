@@ -46,6 +46,7 @@ pub enum BlockKind {
     HtmlBlock {
         raw: String,
     },
+    Table(Table),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -60,6 +61,22 @@ pub struct List {
 pub struct ListItem {
     pub span: Span,
     pub blocks: Vec<Block>,
+    pub task: Option<bool>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Table {
+    pub headers: Vec<InlineSeq>,
+    pub aligns: Vec<TableAlign>,
+    pub rows: Vec<Vec<InlineSeq>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TableAlign {
+    None,
+    Left,
+    Center,
+    Right,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -108,6 +125,7 @@ pub enum InlineKind {
     Text(String),
     Emph(InlineSeq),
     Strong(InlineSeq),
+    Strikethrough(InlineSeq),
     CodeSpan(String),
     SoftBreak,
     HardBreak,

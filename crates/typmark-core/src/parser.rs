@@ -1,7 +1,7 @@
 use crate::ast::{
     AttrItem, AttrList, AttrValue, Block, BlockKind, BoxBlock, CodeBlock, CodeMeta, Document,
     Inline, InlineKind, InlineSeq, Label, LineLabel, LineRange, LinkDefinition, LinkRefMeta, List,
-    ListItem,
+    ListItem, Table, TableAlign,
 };
 use crate::diagnostic::{
     Diagnostic, DiagnosticSeverity, E_ATTR_SYNTAX, E_CODE_CONFLICT, E_MATH_INLINE_NL,
@@ -191,6 +191,14 @@ impl Parser {
                 continue;
             }
 
+            if let Some((block, next)) = self.parse_table(lines, i, parse_inlines) {
+                let mut block = block;
+                self.finalize_block(&mut block, &mut pending_attrs);
+                blocks.push(block);
+                i = next;
+                continue;
+            }
+
             if let Some((block, next)) = self.parse_heading(lines, i, parse_inlines) {
                 let mut block = block;
                 self.finalize_block(&mut block, &mut pending_attrs);
@@ -276,6 +284,78 @@ impl Parser {
                 kind: BlockKind::Heading { level, title },
             },
             i + 1,
+        ))
+    }
+
+    fn parse_table(
+        &mut self,
+        lines: &[Line],
+        start: usize,
+        parse_inlines: bool,
+    ) -> Option<(Block, usize)> {
+        let line = lines.get(start)?;
+        let (header_offset, header_text) = table_line_view(&line.text)?;
+        let (header_cells, header_has_pipe) = split_table_cells(header_text, header_offset);
+        if !header_has_pipe {
+            return None;
+        }
+
+        let separator = lines.get(start + 1)?;
+        let (sep_offset, sep_text) = table_line_view(&separator.text)?;
+        let aligns = parse_table_separator(sep_text, sep_offset)?;
+        if aligns.is_empty() {
+            return None;
+        }
+
+        let headers = parse_table_cells(
+            self,
+            line.start,
+            &header_cells,
+            aligns.len(),
+            parse_inlines,
+        );
+
+        let mut rows = Vec::new();
+        let mut i = start + 2;
+        while i < lines.len() {
+            let row_line = &lines[i];
+            if row_line.text.trim().is_empty() {
+                break;
+            }
+            let (row_offset, row_text) = match table_line_view(&row_line.text) {
+                Some(value) => value,
+                None => break,
+            };
+            let (row_cells, row_has_pipe) = split_table_cells(row_text, row_offset);
+            if !row_has_pipe {
+                break;
+            }
+            let row = parse_table_cells(
+                self,
+                row_line.start,
+                &row_cells,
+                aligns.len(),
+                parse_inlines,
+            );
+            rows.push(row);
+            i += 1;
+        }
+
+        let span = Span {
+            start: line.start,
+            end: lines[i.saturating_sub(1)].end,
+        };
+        Some((
+            Block {
+                span,
+                attrs: AttrList::default(),
+                kind: BlockKind::Table(Table {
+                    headers,
+                    aligns,
+                    rows,
+                }),
+            },
+            i,
         ))
     }
 
@@ -956,13 +1036,18 @@ impl Parser {
                 }
                 break;
             }
-            let blocks = self.parse_blocks(&item_lines, parse_inlines);
+            let mut blocks = self.parse_blocks(&item_lines, parse_inlines);
             let item_has_blank = item_has_blank_between_blocks(&item_lines, &blocks);
             let span = Span {
                 start: current.start,
                 end: lines[last_line_idx].end,
             };
-            items.push(ListItem { span, blocks });
+            let task = if parse_inlines {
+                detect_task_marker(&mut blocks)
+            } else {
+                None
+            };
+            items.push(ListItem { span, blocks, task });
             item_blanks.push(item_has_blank);
             list_end = span.end;
             i = j;
@@ -1272,8 +1357,16 @@ impl Parser {
                     i += 1;
                     continue;
                 }
-                b'*' | b'_' => {
+                b'*' | b'_' | b'~' => {
                     let run_len = count_run(bytes, i, end, b);
+                    if b == b'~' && run_len < 2 {
+                        if text_buf.is_empty() {
+                            text_start = i;
+                        }
+                        text_buf.push(b'~');
+                        i += 1;
+                        continue;
+                    }
                     let (can_open, can_close) =
                         delimiter_properties(buffer, start, end, i, run_len, b);
                     self.flush_text_buf(&mut out, offsets, &mut text_buf, &mut text_start, i);
@@ -1337,6 +1430,7 @@ impl Parser {
 
         self.flush_text_buf(&mut out, offsets, &mut text_buf, &mut text_start, end);
         self.process_emphasis(&mut out, &mut delims);
+        autolink_inlines(&mut out);
         out
     }
 
@@ -2060,12 +2154,19 @@ impl Parser {
                 if opener.ch != closer.ch || !opener.can_open {
                     continue;
                 }
-                let candidate = if opener.len >= 2 && closer.len >= 2 {
+                let candidate = if opener.ch == b'~' {
+                    // GFM strikethrough follows emphasis-like nesting rules.
+                    if opener.len >= 2 && closer.len >= 2 {
+                        2
+                    } else {
+                        continue;
+                    }
+                } else if opener.len >= 2 && closer.len >= 2 {
                     2
                 } else {
                     1
                 };
-                if candidate == 1 && delimiter_blocked(opener, &closer) {
+                if opener.ch != b'~' && candidate == 1 && delimiter_blocked(opener, &closer) {
                     continue;
                 }
                 opener_index = Some(idx);
@@ -2142,7 +2243,9 @@ impl Parser {
             start: opener_node.span.start + opener_remain,
             end: closer_node.span.end.saturating_sub(closer_remain),
         };
-        let emph_kind = if use_len == 2 {
+        let emph_kind = if opener.ch == b'~' {
+            InlineKind::Strikethrough(children)
+        } else if use_len == 2 {
             InlineKind::Strong(children)
         } else {
             InlineKind::Emph(children)
@@ -3411,6 +3514,465 @@ fn html_block_end(kind: HtmlBlockKind, line: &str) -> bool {
     }
 }
 
+fn table_line_view(text: &str) -> Option<(usize, &str)> {
+    let bytes = text.as_bytes();
+    let mut idx = 0;
+    let mut spaces = 0;
+    while idx < bytes.len() && spaces < 3 && bytes[idx] == b' ' {
+        idx += 1;
+        spaces += 1;
+    }
+    if idx < bytes.len() && bytes[idx] == b' ' {
+        return None;
+    }
+    Some((idx, &text[idx..]))
+}
+
+fn split_table_cells(text: &str, base_offset: usize) -> (Vec<TableCellRaw>, bool) {
+    let bytes = text.as_bytes();
+    let mut cells = Vec::new();
+    let mut buf = String::new();
+    let mut cell_start = 0usize;
+    let mut i = 0usize;
+    let mut had_pipe = false;
+
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'\\' && i + 1 < bytes.len() && bytes[i + 1] == b'|' {
+            buf.push('\\');
+            buf.push('|');
+            i += 2;
+            continue;
+        }
+        if b == b'`' {
+            let run_len = count_run(bytes, i, bytes.len(), b'`');
+            for _ in 0..run_len {
+                buf.push('`');
+            }
+            i += run_len;
+            while i < bytes.len() {
+                if bytes[i] == b'`' && count_run(bytes, i, bytes.len(), b'`') == run_len {
+                    for _ in 0..run_len {
+                        buf.push('`');
+                    }
+                    i += run_len;
+                    break;
+                }
+                buf.push(bytes[i] as char);
+                i += 1;
+            }
+            continue;
+        }
+        if b == b'|' {
+            had_pipe = true;
+            let cell = finalize_table_cell(&buf, base_offset + cell_start);
+            cells.push(cell);
+            buf.clear();
+            i += 1;
+            cell_start = i;
+            continue;
+        }
+        buf.push(b as char);
+        i += 1;
+    }
+    let cell = finalize_table_cell(&buf, base_offset + cell_start);
+    cells.push(cell);
+
+    if had_pipe && cells.len() > 1 {
+        if cells.first().map_or(false, |cell| cell.text.is_empty()) {
+            cells.remove(0);
+        }
+        if cells.last().map_or(false, |cell| cell.text.is_empty()) {
+            cells.pop();
+        }
+    }
+
+    (cells, had_pipe)
+}
+
+fn finalize_table_cell(text: &str, start: usize) -> TableCellRaw {
+    let bytes = text.as_bytes();
+    let mut leading = 0usize;
+    while leading < bytes.len() && (bytes[leading] == b' ' || bytes[leading] == b'\t') {
+        leading += 1;
+    }
+    let mut trailing = bytes.len();
+    while trailing > leading && (bytes[trailing - 1] == b' ' || bytes[trailing - 1] == b'\t') {
+        trailing -= 1;
+    }
+    TableCellRaw {
+        text: text[leading..trailing].to_string(),
+        start: start + leading,
+    }
+}
+
+fn parse_table_separator(text: &str, base_offset: usize) -> Option<Vec<TableAlign>> {
+    let (cells, had_pipe) = split_table_cells(text, base_offset);
+    if !had_pipe {
+        return None;
+    }
+    let mut aligns = Vec::new();
+    for cell in cells {
+        let trimmed = cell.text.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        let left = trimmed.starts_with(':');
+        let right = trimmed.ends_with(':');
+        let core = trimmed.trim_matches(':');
+        if core.len() < 3 || !core.chars().all(|ch| ch == '-') {
+            return None;
+        }
+        let align = match (left, right) {
+            (true, true) => TableAlign::Center,
+            (true, false) => TableAlign::Left,
+            (false, true) => TableAlign::Right,
+            (false, false) => TableAlign::None,
+        };
+        aligns.push(align);
+    }
+    Some(aligns)
+}
+
+fn parse_table_cells(
+    parser: &mut Parser,
+    line_start: usize,
+    cells: &[TableCellRaw],
+    expected: usize,
+    parse_inlines: bool,
+) -> Vec<InlineSeq> {
+    let mut out = Vec::new();
+    for cell in cells.iter().take(expected) {
+        let inlines = if parse_inlines {
+            parser.parse_inline(&cell.text, line_start + cell.start)
+        } else {
+            Vec::new()
+        };
+        out.push(inlines);
+    }
+    while out.len() < expected {
+        out.push(Vec::new());
+    }
+    out
+}
+
+fn detect_task_marker(blocks: &mut [Block]) -> Option<bool> {
+    let first = blocks.first_mut()?;
+    let BlockKind::Paragraph { content } = &mut first.kind else {
+        return None;
+    };
+    take_task_marker(content)
+}
+
+fn take_task_marker(content: &mut InlineSeq) -> Option<bool> {
+    let mut prefix = [0u8; 4];
+    let mut filled = 0;
+
+    for inline in content.iter() {
+        let InlineKind::Text(text) = &inline.kind else {
+            return None;
+        };
+        if text.is_empty() {
+            continue;
+        }
+        for byte in text.as_bytes() {
+            prefix[filled] = *byte;
+            filled += 1;
+            if filled == prefix.len() {
+                break;
+            }
+        }
+        if filled == prefix.len() {
+            break;
+        }
+    }
+
+    if filled < prefix.len() || prefix[0] != b'[' || prefix[2] != b']' {
+        return None;
+    }
+    if prefix[3] != b' ' && prefix[3] != b'\t' {
+        return None;
+    }
+    let checked = match prefix[1] {
+        b' ' => false,
+        b'x' | b'X' => true,
+        _ => return None,
+    };
+
+    let mut remaining = prefix.len();
+    let mut idx = 0;
+    while idx < content.len() && remaining > 0 {
+        let InlineKind::Text(text) = &mut content[idx].kind else {
+            return None;
+        };
+        if text.is_empty() {
+            content.remove(idx);
+            continue;
+        }
+        let remove_len = remaining.min(text.len());
+        let new_text = text[remove_len..].to_string();
+        remaining -= remove_len;
+        if new_text.is_empty() {
+            content.remove(idx);
+        } else {
+            *text = new_text;
+            idx += 1;
+        }
+    }
+
+    if remaining == 0 {
+        Some(checked)
+    } else {
+        None
+    }
+}
+
+fn autolink_inlines(inlines: &mut InlineSeq) {
+    let mut out = Vec::new();
+    for inline in inlines.drain(..) {
+        match inline.kind {
+            InlineKind::Text(text) => {
+                out.extend(split_autolinks(&text, inline.span));
+            }
+            InlineKind::Emph(children) => {
+                let mut children = children;
+                autolink_inlines(&mut children);
+                out.push(Inline {
+                    span: inline.span,
+                    kind: InlineKind::Emph(children),
+                });
+            }
+            InlineKind::Strong(children) => {
+                let mut children = children;
+                autolink_inlines(&mut children);
+                out.push(Inline {
+                    span: inline.span,
+                    kind: InlineKind::Strong(children),
+                });
+            }
+            InlineKind::Strikethrough(children) => {
+                let mut children = children;
+                autolink_inlines(&mut children);
+                out.push(Inline {
+                    span: inline.span,
+                    kind: InlineKind::Strikethrough(children),
+                });
+            }
+            InlineKind::Link { .. }
+            | InlineKind::LinkRef { .. }
+            | InlineKind::Image { .. }
+            | InlineKind::ImageRef { .. }
+            | InlineKind::CodeSpan(_)
+            | InlineKind::HtmlSpan { .. }
+            | InlineKind::MathInline { .. }
+            | InlineKind::Ref { .. }
+            | InlineKind::SoftBreak
+            | InlineKind::HardBreak => {
+                out.push(inline);
+            }
+        }
+    }
+    *inlines = out;
+}
+
+fn split_autolinks(text: &str, span: Span) -> InlineSeq {
+    let bytes = text.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    let mut last = 0usize;
+    while i < bytes.len() {
+        if !text.is_char_boundary(i) {
+            i += 1;
+            continue;
+        }
+        if let Some(link) = match_autolink_literal(text, i) {
+            if link.start > last {
+                let span = Span {
+                    start: span.start + last,
+                    end: span.start + link.start,
+                };
+                out.push(Inline {
+                    span,
+                    kind: InlineKind::Text(text[last..link.start].to_string()),
+                });
+            }
+            let link_span = Span {
+                start: span.start + link.start,
+                end: span.start + link.end,
+            };
+            let child_span = Span {
+                start: span.start + link.start,
+                end: span.start + link.end,
+            };
+            out.push(Inline {
+                span: link_span,
+                kind: InlineKind::Link {
+                    url: link.url,
+                    title: None,
+                    children: vec![Inline {
+                        span: child_span,
+                        kind: InlineKind::Text(link.display),
+                    }],
+                },
+            });
+            i = link.end;
+            last = link.end;
+            continue;
+        }
+        i += 1;
+    }
+    if last < bytes.len() {
+        out.push(Inline {
+            span: Span {
+                start: span.start + last,
+                end: span.start + bytes.len(),
+            },
+            kind: InlineKind::Text(text[last..].to_string()),
+        });
+    }
+    out
+}
+
+struct AutolinkLiteral {
+    start: usize,
+    end: usize,
+    url: String,
+    display: String,
+}
+
+fn match_autolink_literal(text: &str, start: usize) -> Option<AutolinkLiteral> {
+    let bytes = text.as_bytes();
+    let prev = if start == 0 { None } else { bytes.get(start - 1).copied() };
+    if !is_autolink_boundary(prev) {
+        return None;
+    }
+    if text[start..].starts_with("http://") || text[start..].starts_with("https://") {
+        let end = scan_autolink_end(text, start);
+        return build_autolink(text, start, end, false);
+    }
+    if text[start..].starts_with("www.") {
+        let end = scan_autolink_end(text, start);
+        if end <= start + 4 {
+            return None;
+        }
+        let rest = &text[start + 4..end];
+        if !rest.contains('.') {
+            return None;
+        }
+        return build_autolink(text, start, end, true);
+    }
+    let end = scan_email_end(text, start)?;
+    let candidate = &text[start..end];
+    if is_autolink_email(candidate) {
+        return Some(AutolinkLiteral {
+            start,
+            end,
+            url: format!("mailto:{}", candidate),
+            display: candidate.to_string(),
+        });
+    }
+    None
+}
+
+fn is_autolink_boundary(prev: Option<u8>) -> bool {
+    match prev {
+        None => true,
+        Some(b) => {
+            b.is_ascii_whitespace() || matches!(b, b'(' | b'[' | b'{' | b'"' | b'\'')
+        }
+    }
+}
+
+fn scan_autolink_end(text: &str, start: usize) -> usize {
+    let bytes = text.as_bytes();
+    let mut end = start;
+    while end < bytes.len() {
+        let b = bytes[end];
+        if b.is_ascii_whitespace() || matches!(b, b'<' | b'>' | b'"' | b'\'') {
+            break;
+        }
+        end += 1;
+    }
+    while end > start && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    trim_autolink_punct(text, start, end)
+}
+
+fn scan_email_end(text: &str, start: usize) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut end = start;
+    while end < bytes.len() {
+        let b = bytes[end];
+        if b.is_ascii_whitespace() || matches!(b, b'<' | b'>' | b'"' | b'\'') {
+            break;
+        }
+        end += 1;
+    }
+    if end == start {
+        None
+    } else {
+        Some(trim_autolink_punct(text, start, end))
+    }
+}
+
+fn trim_autolink_punct(text: &str, start: usize, mut end: usize) -> usize {
+    let bytes = text.as_bytes();
+    while end > start {
+        let b = bytes[end - 1];
+        if matches!(b, b'.' | b',' | b';' | b':' | b'!' | b'?') {
+            end -= 1;
+            continue;
+        }
+        break;
+    }
+    if end > start && bytes[end - 1] == b')' {
+        end = trim_autolink_brackets(bytes, start, end, b'(', b')');
+    }
+    if end > start && bytes[end - 1] == b']' {
+        end = trim_autolink_brackets(bytes, start, end, b'[', b']');
+    }
+    if end > start && bytes[end - 1] == b'}' {
+        end = trim_autolink_brackets(bytes, start, end, b'{', b'}');
+    }
+    end
+}
+
+fn trim_autolink_brackets(bytes: &[u8], start: usize, mut end: usize, open: u8, close: u8) -> usize {
+    let mut open_count = 0usize;
+    let mut close_count = 0usize;
+    for b in &bytes[start..end] {
+        if *b == open {
+            open_count += 1;
+        } else if *b == close {
+            close_count += 1;
+        }
+    }
+    while end > start && bytes[end - 1] == close && close_count > open_count {
+        end -= 1;
+        close_count = close_count.saturating_sub(1);
+    }
+    end
+}
+
+fn build_autolink(text: &str, start: usize, end: usize, add_scheme: bool) -> Option<AutolinkLiteral> {
+    if end <= start {
+        return None;
+    }
+    let display = text[start..end].to_string();
+    let url = if add_scheme {
+        format!("http://{}", display)
+    } else {
+        display.clone()
+    };
+    Some(AutolinkLiteral {
+        start,
+        end,
+        url,
+        display,
+    })
+}
+
 fn contains_html_closing_tag(line: &str, tag: &str) -> bool {
     let lower = line.to_ascii_lowercase();
     let needle = format!("</{}", tag);
@@ -3432,6 +3994,12 @@ struct ListMarker {
     content_indent: usize,
     empty: bool,
     marker: u8,
+}
+
+#[derive(Clone, Debug)]
+struct TableCellRaw {
+    text: String,
+    start: usize,
 }
 
 fn indent_prefix_len(text: &str, required: usize) -> Option<usize> {

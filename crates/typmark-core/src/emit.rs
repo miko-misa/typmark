@@ -1,6 +1,6 @@
 use crate::ast::{
     Block, BlockKind, BoxBlock, CodeBlock, CodeMeta, Inline, InlineKind, Label, LineRange, List,
-    ResolvedRef,
+    ResolvedRef, Table, TableAlign,
 };
 use crate::math::render_math;
 use ammonia::Builder;
@@ -81,6 +81,13 @@ pub fn emit_html_sanitized(blocks: &[Block]) -> String {
         "sup",
         "u",
         "ul", // TypMark-specific tags
+        "table",
+        "thead",
+        "tbody",
+        "tr",
+        "th",
+        "td",
+        "input",
         "figure",
         "span", // SVG tags from core.md
         "svg",
@@ -105,6 +112,12 @@ pub fn emit_html_sanitized(blocks: &[Block]) -> String {
     tag_attributes.insert("abbr", ["title"].iter().copied().collect());
     tag_attributes.insert("img", ["alt", "src", "title"].iter().copied().collect());
     tag_attributes.insert("ol", ["start"].iter().copied().collect());
+    tag_attributes.insert("th", ["align"].iter().copied().collect());
+    tag_attributes.insert("td", ["align"].iter().copied().collect());
+    tag_attributes.insert(
+        "input",
+        ["type", "checked", "disabled"].iter().copied().collect(),
+    );
 
     // TypMark code block attributes from core.md
     tag_attributes.insert(
@@ -313,11 +326,23 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
             } else {
                 String::new()
             };
-            writer.line(&format!("<{}{}{}>", tag, id, start_attr));
+            let has_tasks = items.iter().any(|item| item.task.is_some());
+            let list_class = if has_tasks {
+                " class=\"task-list\""
+            } else {
+                ""
+            };
+            writer.line(&format!("<{}{}{}{}>", tag, id, start_attr, list_class));
             writer.indent += 1;
             for item in items {
+                let task_prefix = item.task.map(task_input_html);
+                let task_class = if item.task.is_some() {
+                    " class=\"task-list-item\""
+                } else {
+                    ""
+                };
                 if item.blocks.is_empty() {
-                    writer.line("<li></li>");
+                    writer.line(&format!("<li{}></li>", task_class));
                     continue;
                 }
                 if *tight && !item.blocks.is_empty() {
@@ -327,7 +352,12 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
                         let inline_content =
                             render_inlines_with_context(content, RenderContext::Normal);
                         writer.out.push_str(&"  ".repeat(writer.indent));
-                        writer.out.push_str("<li>");
+                        writer.out.push_str("<li");
+                        writer.out.push_str(task_class);
+                        writer.out.push_str(">");
+                        if let Some(prefix) = &task_prefix {
+                            writer.out.push_str(prefix);
+                        }
                         writer.out.push_str(&inline_content);
 
                         // Render remaining blocks normally
@@ -354,8 +384,11 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
                         }
                     } else {
                         // First block is not a paragraph, render all blocks with tight semantics
-                        writer.line("<li>");
+                        writer.line(&format!("<li{}>", task_class));
                         writer.indent += 1;
+                        if let Some(prefix) = &task_prefix {
+                            writer.line(prefix);
+                        }
                         let mut last_ended = true;
                         for (idx, child) in item.blocks.iter().enumerate() {
                             let ended = emit_block_tight(writer, child);
@@ -373,9 +406,17 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
                     }
                 } else {
                     // Loose list: render all blocks normally (paragraphs get <p> tags)
-                    writer.line("<li>");
+                    writer.line(&format!("<li{}>", task_class));
                     writer.indent += 1;
-                    for child in &item.blocks {
+                    for (idx, child) in item.blocks.iter().enumerate() {
+                        if idx == 0 {
+                            if let BlockKind::Paragraph { content } = &child.kind {
+                                if let Some(prefix) = &task_prefix {
+                                    emit_paragraph_with_prefix(writer, content, prefix);
+                                    continue;
+                                }
+                            }
+                        }
                         emit_block(writer, child);
                     }
                     writer.indent -= 1;
@@ -384,6 +425,9 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
             }
             writer.indent -= 1;
             writer.line(&format!("</{}>", tag));
+        }
+        BlockKind::Table(table) => {
+            emit_table(writer, table);
         }
         BlockKind::Box(BoxBlock { title, blocks }) => {
             let mut attrs = format!("class=\"TypMark-box\" data-typmark=\"box\"");
@@ -666,6 +710,11 @@ fn render_inlines_with_context(inlines: &[Inline], context: RenderContext) -> St
                 out.push_str(&render_inlines_with_context(children, context));
                 out.push_str("</strong>");
             }
+            InlineKind::Strikethrough(children) => {
+                out.push_str("<del>");
+                out.push_str(&render_inlines_with_context(children, context));
+                out.push_str("</del>");
+            }
             InlineKind::Link {
                 url,
                 title,
@@ -800,6 +849,69 @@ fn render_ref(
     }
 }
 
+fn task_input_html(checked: bool) -> String {
+    if checked {
+        "<input type=\"checkbox\" disabled=\"\" checked=\"\" /> ".to_string()
+    } else {
+        "<input type=\"checkbox\" disabled=\"\" /> ".to_string()
+    }
+}
+
+fn emit_paragraph_with_prefix(writer: &mut HtmlWriter, content: &[Inline], prefix: &str) {
+    let inline = render_inlines_with_context(content, RenderContext::Normal);
+    writer.out.push_str(&"  ".repeat(writer.indent));
+    writer.out.push_str("<p>");
+    writer.out.push_str(prefix);
+    writer.out.push_str(&inline);
+    writer.out.push_str("</p>\n");
+}
+
+fn emit_table(writer: &mut HtmlWriter, table: &Table) {
+    writer.line("<table>");
+    writer.indent += 1;
+    writer.line("<thead>");
+    writer.indent += 1;
+    writer.line("<tr>");
+    writer.indent += 1;
+    for (idx, cell) in table.headers.iter().enumerate() {
+        let align_attr = table_align_attr(table.aligns.get(idx).copied());
+        let inline = render_inlines_with_context(cell, RenderContext::Normal);
+        writer.line(&format!("<th{}>{}</th>", align_attr, inline));
+    }
+    writer.indent -= 1;
+    writer.line("</tr>");
+    writer.indent -= 1;
+    writer.line("</thead>");
+    if !table.rows.is_empty() {
+        writer.line("<tbody>");
+        writer.indent += 1;
+        for row in &table.rows {
+            writer.line("<tr>");
+            writer.indent += 1;
+            for (idx, cell) in row.iter().enumerate() {
+                let align_attr = table_align_attr(table.aligns.get(idx).copied());
+                let inline = render_inlines_with_context(cell, RenderContext::Normal);
+                writer.line(&format!("<td{}>{}</td>", align_attr, inline));
+            }
+            writer.indent -= 1;
+            writer.line("</tr>");
+        }
+        writer.indent -= 1;
+        writer.line("</tbody>");
+    }
+    writer.indent -= 1;
+    writer.line("</table>");
+}
+
+fn table_align_attr(align: Option<TableAlign>) -> &'static str {
+    match align.unwrap_or(TableAlign::None) {
+        TableAlign::None => "",
+        TableAlign::Left => " align=\"left\"",
+        TableAlign::Center => " align=\"center\"",
+        TableAlign::Right => " align=\"right\"",
+    }
+}
+
 fn render_inlines_text(inlines: &[Inline]) -> String {
     let mut out = String::new();
     for inline in inlines {
@@ -817,6 +929,7 @@ fn render_inlines_text(inlines: &[Inline]) -> String {
             }
             InlineKind::Emph(children)
             | InlineKind::Strong(children)
+            | InlineKind::Strikethrough(children)
             | InlineKind::Link { children, .. }
             | InlineKind::LinkRef { children, .. } => {
                 out.push_str(&render_inlines_text(children));

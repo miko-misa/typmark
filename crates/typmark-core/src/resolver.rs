@@ -491,7 +491,9 @@ fn resolve_inlines(
                     },
                 });
             }
-            InlineKind::Emph(children) | InlineKind::Strong(children) => {
+            InlineKind::Emph(children)
+            | InlineKind::Strong(children)
+            | InlineKind::Strikethrough(children) => {
                 resolve_inlines(children, labels, diagnostics, source_map);
             }
             // LinkRef is already resolved, so we only need to recurse.
@@ -567,6 +569,15 @@ fn build_reference_text_from_inlines(
                 out.push(Inline {
                     span: inline.span,
                     kind: InlineKind::Emph(inner),
+                });
+            }
+            InlineKind::Strikethrough(children) => {
+                let (inner, inner_exceeded) =
+                    build_reference_text_from_inlines(children, labels, depth, visited);
+                exceeded |= inner_exceeded;
+                out.push(Inline {
+                    span: inline.span,
+                    kind: InlineKind::Strikethrough(inner),
                 });
             }
             InlineKind::Strong(children) => {
