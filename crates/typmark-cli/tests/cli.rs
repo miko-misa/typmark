@@ -83,18 +83,17 @@ fn render_wraps_html_with_assets() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("<!DOCTYPE html>"), "expected HTML wrapper");
     assert!(stdout.contains("<style>"), "expected inline CSS");
-    assert!(!stdout.contains("<script>"), "expected no inline JS by default");
+    assert!(
+        !stdout.contains("<script>"),
+        "expected no inline JS by default"
+    );
 }
 
 #[test]
 fn render_allows_theme_selection() {
     let input = temp_file("render_theme", "Paragraph.\n");
     let output = Command::new(bin_path())
-        .args([
-            "--theme",
-            "dark",
-            input.to_str().expect("path"),
-        ])
+        .args(["--theme", "dark", input.to_str().expect("path")])
         .output()
         .expect("run");
 

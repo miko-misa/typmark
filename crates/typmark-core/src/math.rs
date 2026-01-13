@@ -255,10 +255,7 @@ pub fn prefix_svg_ids(svg: &str, prefix: &str) -> String {
             &format!("href=\"#{}\"", id),
             &format!("href=\"#{}\"", new_id),
         );
-        out = out.replace(
-            &format!("url(#{})", id),
-            &format!("url(#{})", new_id),
-        );
+        out = out.replace(&format!("url(#{})", id), &format!("url(#{})", new_id));
     }
     out
 }

@@ -265,12 +265,7 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
                     RenderContext::Title,
                     &mut writer.math_counter,
                 );
-                let heading = format!(
-                    "<h{}>{}</h{}>",
-                    level,
-                    title_html,
-                    level
-                );
+                let heading = format!("<h{}>{}</h{}>", level, title_html, level);
                 writer.line(&heading);
                 for child in children {
                     emit_block(writer, child);
@@ -285,10 +280,7 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
                     RenderContext::Title,
                     &mut writer.math_counter,
                 );
-                writer.line(&format!(
-                    "<h{}{}>{}</h{}>",
-                    level, attrs, title_html, level
-                ));
+                writer.line(&format!("<h{}{}>{}</h{}>", level, attrs, title_html, level));
                 for child in children {
                     emit_block(writer, child);
                 }
@@ -296,15 +288,9 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
         }
         BlockKind::Heading { level, title } => {
             let attrs = compose_block_attrs(block.attrs.label.as_ref(), &block.attrs.items);
-            let title_html = render_inlines_with_context(
-                title,
-                RenderContext::Title,
-                &mut writer.math_counter,
-            );
-            writer.line(&format!(
-                "<h{}{}>{}</h{}>",
-                level, attrs, title_html, level
-            ));
+            let title_html =
+                render_inlines_with_context(title, RenderContext::Title, &mut writer.math_counter);
+            writer.line(&format!("<h{}{}>{}</h{}>", level, attrs, title_html, level));
         }
         BlockKind::Paragraph { content } => {
             let attrs = compose_block_attrs(block.attrs.label.as_ref(), &block.attrs.items);
@@ -313,10 +299,7 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
                 RenderContext::Normal,
                 &mut writer.math_counter,
             );
-            writer.line(&format!(
-                "<p{}>{}</p>",
-                attrs, inline_html
-            ));
+            writer.line(&format!("<p{}>{}</p>", attrs, inline_html));
         }
         BlockKind::BlockQuote { blocks } => {
             let attrs = compose_block_attrs(block.attrs.label.as_ref(), &block.attrs.items);
@@ -511,16 +494,16 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
             meta,
             text,
         }) => {
-            emit_code_block(
-                writer,
-                *kind,
-                lang.as_deref(),
-                &info_attrs.items,
+            let data = CodeBlockRender {
+                kind: *kind,
+                lang: lang.as_deref(),
+                info_items: &info_attrs.items,
                 meta,
                 text,
-                block.attrs.label.as_ref(),
-                &block.attrs.items,
-            );
+                label: block.attrs.label.as_ref(),
+                items: &block.attrs.items,
+            };
+            emit_code_block(writer, data);
         }
         BlockKind::HtmlBlock { raw } => {
             let attrs = compose_block_attrs(block.attrs.label.as_ref(), &block.attrs.items);
@@ -567,12 +550,7 @@ fn emit_block_tight(writer: &mut HtmlWriter, block: &Block) -> bool {
                     RenderContext::Title,
                     &mut writer.math_counter,
                 );
-                let heading = format!(
-                    "<h{}>{}</h{}>",
-                    level,
-                    title_html,
-                    level
-                );
+                let heading = format!("<h{}>{}</h{}>", level, title_html, level);
                 writer.line(&heading);
                 for (idx, child) in children.iter().enumerate() {
                     let ended = emit_block_tight(writer, child);
@@ -590,10 +568,7 @@ fn emit_block_tight(writer: &mut HtmlWriter, block: &Block) -> bool {
                     RenderContext::Title,
                     &mut writer.math_counter,
                 );
-                writer.line(&format!(
-                    "<h{}{}>{}</h{}>",
-                    level, attrs, title_html, level
-                ));
+                writer.line(&format!("<h{}{}>{}</h{}>", level, attrs, title_html, level));
                 let mut last_ended = true;
                 for (idx, child) in children.iter().enumerate() {
                     let ended = emit_block_tight(writer, child);
@@ -612,24 +587,26 @@ fn emit_block_tight(writer: &mut HtmlWriter, block: &Block) -> bool {
     }
 }
 
-fn emit_code_block(
-    writer: &mut HtmlWriter,
+struct CodeBlockRender<'a> {
     kind: CodeBlockKind,
-    lang: Option<&str>,
-    info_items: &[AttrItem],
-    meta: &CodeMeta,
-    text: &str,
-    label: Option<&Label>,
-    items: &[AttrItem],
-) {
-    let mut attrs = compose_block_attrs(label, items);
-    attrs.push_str(&data_attrs(info_items));
+    lang: Option<&'a str>,
+    info_items: &'a [AttrItem],
+    meta: &'a CodeMeta,
+    text: &'a str,
+    label: Option<&'a Label>,
+    items: &'a [AttrItem],
+}
+
+fn emit_code_block(writer: &mut HtmlWriter, data: CodeBlockRender<'_>) {
+    let mut attrs = compose_block_attrs(data.label, data.items);
+    attrs.push_str(&data_attrs(data.info_items));
     if writer.options.simple_code_blocks {
         // CommonMark-compatible simple output
         // Use code-specific escaping for code contents.
-        let escaped = escape_html_code(text);
-        let lang_class = lang
-            .map(|l| format!(" class=\"language-{}\"", escape_attr(l)))
+        let escaped = escape_html_code(data.text);
+        let lang_class = data
+            .lang
+            .map(|value| format!(" class=\"language-{}\"", escape_attr(value)))
             .unwrap_or_default();
         writer
             .out
@@ -640,83 +617,88 @@ fn emit_code_block(
             writer.out.push('\n');
         }
         writer.out.push_str("</code></pre>\n");
+    } else if data.kind == CodeBlockKind::Indented {
+        // Emit simple CommonMark-style pre/code for indented code blocks
+        // Use code-specific escaping for code contents.
+        let escaped = escape_html_code(data.text);
+        // Write as single line without indentation for CommonMark compatibility
+        writer.out.push_str(&format!("<pre{}><code>", attrs));
+        writer.out.push_str(&escaped);
+        // Only add newline if text is non-empty and doesn't already end with one
+        if !escaped.is_empty() && !escaped.ends_with('\n') {
+            writer.out.push('\n');
+        }
+        writer.out.push_str("</code></pre>\n");
     } else {
-        if kind == CodeBlockKind::Indented {
-            // Emit simple CommonMark-style pre/code for indented code blocks
-            // Use code-specific escaping for code contents.
-            let escaped = escape_html_code(text);
-            // Write as single line without indentation for CommonMark compatibility
-            writer.out.push_str(&format!("<pre{}><code>", attrs));
-            writer.out.push_str(&escaped);
-            // Only add newline if text is non-empty and doesn't already end with one
-            if !escaped.is_empty() && !escaped.ends_with('\n') {
-                writer.out.push('\n');
+        // Emit full TypMark-style figure with line wrappers for fenced code blocks with metadata
+        let lang_attr = data
+            .lang
+            .map(|value| format!(" data-lang=\"{}\"", escape_attr(value)))
+            .unwrap_or_default();
+        writer.line(&format!(
+            "<figure class=\"TypMark-codeblock\" data-typmark=\"codeblock\"{}{}>",
+            attrs, lang_attr
+        ));
+        writer.indent += 1;
+        let code_class = data
+            .lang
+            .map(|value| format!("language-{}", escape_attr(value)))
+            .unwrap_or_else(|| "language-".to_string());
+        writer.out.push_str(&"  ".repeat(writer.indent));
+        writer.out.push_str(&format!(
+            "<pre class=\"TypMark-pre\"><code class=\"{}\">",
+            code_class
+        ));
+
+        let lines = split_lines_preserve(data.text);
+        for (idx, line) in lines.iter().enumerate() {
+            let line_no = (idx + 1) as u32;
+            let highlighted = line_in_ranges(line_no, &data.meta.hl);
+            let diff = if line_in_ranges(line_no, &data.meta.diff_add) {
+                Some("add")
+            } else if line_in_ranges(line_no, &data.meta.diff_del) {
+                Some("del")
+            } else {
+                None
+            };
+            let line_label = data
+                .meta
+                .line_labels
+                .iter()
+                .find(|label| label.line == line_no);
+
+            let mut class = String::from("line");
+            if highlighted {
+                class.push_str(" highlighted");
             }
-            writer.out.push_str("</code></pre>\n");
-        } else {
-            // Emit full TypMark-style figure with line wrappers for fenced code blocks with metadata
-            let lang_attr = lang
-                .map(|value| format!(" data-lang=\"{}\"", escape_attr(value)))
-                .unwrap_or_default();
-            writer.line(&format!(
-                "<figure class=\"TypMark-codeblock\" data-typmark=\"codeblock\"{}{}>",
-                attrs, lang_attr
-            ));
-            writer.indent += 1;
-            let code_class = lang
-                .map(|value| format!("language-{}", escape_attr(value)))
-                .unwrap_or_else(|| "language-".to_string());
-            writer.out.push_str(&"  ".repeat(writer.indent));
-            writer
-                .out
-                .push_str(&format!("<pre class=\"TypMark-pre\"><code class=\"{}\">", code_class));
-
-            let lines = split_lines_preserve(text);
-            for (idx, line) in lines.iter().enumerate() {
-                let line_no = (idx + 1) as u32;
-                let highlighted = line_in_ranges(line_no, &meta.hl);
-                let diff = if line_in_ranges(line_no, &meta.diff_add) {
-                    Some("add")
-                } else if line_in_ranges(line_no, &meta.diff_del) {
-                    Some("del")
-                } else {
-                    None
-                };
-                let line_label = meta.line_labels.iter().find(|label| label.line == line_no);
-
-                let mut class = String::from("line");
-                if highlighted {
-                    class.push_str(" highlighted");
-                }
-                if let Some(diff_kind) = diff {
-                    class.push_str(" diff ");
-                    class.push_str(diff_kind);
-                }
-                let mut attrs = format!("class=\"{}\" data-line=\"{}\"", class, line_no);
-                if highlighted {
-                    attrs.push_str(" data-highlighted-line");
-                }
-                if let Some(diff_kind) = diff {
-                    attrs.push_str(&format!(" data-diff=\"{}\"", diff_kind));
-                }
-                if let Some(label) = line_label {
-                    attrs.push_str(&format!(
-                        " id=\"{}\" data-line-label=\"{}\"",
-                        escape_attr(&label.label.name),
-                        escape_attr(&label.label.name)
-                    ));
-                }
-                writer.out.push_str(&format!(
-                    "<span {}>{}</span>",
-                    attrs,
-                    escape_html_code(line)
+            if let Some(diff_kind) = diff {
+                class.push_str(" diff ");
+                class.push_str(diff_kind);
+            }
+            let mut attrs = format!("class=\"{}\" data-line=\"{}\"", class, line_no);
+            if highlighted {
+                attrs.push_str(" data-highlighted-line");
+            }
+            if let Some(diff_kind) = diff {
+                attrs.push_str(&format!(" data-diff=\"{}\"", diff_kind));
+            }
+            if let Some(label) = line_label {
+                attrs.push_str(&format!(
+                    " id=\"{}\" data-line-label=\"{}\"",
+                    escape_attr(&label.label.name),
+                    escape_attr(&label.label.name)
                 ));
             }
-
-            writer.out.push_str("</code></pre>\n");
-            writer.indent -= 1;
-            writer.line("</figure>");
+            writer.out.push_str(&format!(
+                "<span {}>{}</span>",
+                attrs,
+                escape_html_code(line)
+            ));
         }
+
+        writer.out.push_str("</code></pre>\n");
+        writer.indent -= 1;
+        writer.line("</figure>");
     }
 }
 
@@ -771,17 +753,29 @@ fn render_inlines_with_context(
             }
             InlineKind::Emph(children) => {
                 out.push_str("<em>");
-                out.push_str(&render_inlines_with_context(children, context, math_counter));
+                out.push_str(&render_inlines_with_context(
+                    children,
+                    context,
+                    math_counter,
+                ));
                 out.push_str("</em>");
             }
             InlineKind::Strong(children) => {
                 out.push_str("<strong>");
-                out.push_str(&render_inlines_with_context(children, context, math_counter));
+                out.push_str(&render_inlines_with_context(
+                    children,
+                    context,
+                    math_counter,
+                ));
                 out.push_str("</strong>");
             }
             InlineKind::Strikethrough(children) => {
                 out.push_str("<del>");
-                out.push_str(&render_inlines_with_context(children, context, math_counter));
+                out.push_str(&render_inlines_with_context(
+                    children,
+                    context,
+                    math_counter,
+                ));
                 out.push_str("</del>");
             }
             InlineKind::Link {
@@ -799,7 +793,11 @@ fn render_inlines_with_context(
                         out.push('"');
                     }
                     out.push('>');
-                    out.push_str(&render_inlines_with_context(children, context, math_counter));
+                    out.push_str(&render_inlines_with_context(
+                        children,
+                        context,
+                        math_counter,
+                    ));
                     out.push_str("</a>");
                 }
                 RenderContext::ReferenceText => {
@@ -818,7 +816,11 @@ fn render_inlines_with_context(
                 meta,
             } => {
                 out.push('[');
-                out.push_str(&render_inlines_with_context(children, context, math_counter));
+                out.push_str(&render_inlines_with_context(
+                    children,
+                    context,
+                    math_counter,
+                ));
                 out.push(']');
                 if meta.label_open_span.is_some() {
                     out.push('[');

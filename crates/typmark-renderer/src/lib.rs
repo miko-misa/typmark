@@ -69,7 +69,9 @@ impl Renderer {
         out.push_str("<html lang=\"en\">\n");
         out.push_str("<head>\n");
         out.push_str("  <meta charset=\"utf-8\" />\n");
-        out.push_str("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n");
+        out.push_str(
+            "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n",
+        );
         if with_inline_css {
             out.push_str("  <style>\n");
             out.push_str(&self.stylesheet());
@@ -174,7 +176,11 @@ fn indent_root_block(vars: &BTreeMap<String, String>) -> String {
 
 fn pick_theme(theme: Theme, theme_set: &ThemeSet) -> &SyntectTheme {
     let candidates = match theme {
-        Theme::Dark => ["Monokai Extended Bright", "Monokai Extended", "base16-ocean.dark"],
+        Theme::Dark => [
+            "Monokai Extended Bright",
+            "Monokai Extended",
+            "base16-ocean.dark",
+        ],
         Theme::Light => ["InspiredGitHub", "Solarized (light)", "base16-ocean.light"],
         Theme::Auto => ["InspiredGitHub", "Solarized (light)", "base16-ocean.light"],
     };
@@ -287,11 +293,7 @@ fn highlight_code_lines(
     out
 }
 
-fn highlight_line(
-    line: &str,
-    syntax_set: &SyntaxSet,
-    highlighter: &mut HighlightLines,
-) -> String {
+fn highlight_line(line: &str, syntax_set: &SyntaxSet, highlighter: &mut HighlightLines) -> String {
     match highlighter.highlight_line(line, syntax_set) {
         Ok(ranges) => match styled_line_to_highlighted_html(&ranges, IncludeBackground::No) {
             Ok(html) => strip_font_weight(&html),
@@ -304,10 +306,10 @@ fn highlight_line(
 fn extract_language(code_tag: &str) -> Option<String> {
     let class_attr = extract_attr(code_tag, "class")?;
     for class_name in class_attr.split_whitespace() {
-        if let Some(lang) = class_name.strip_prefix("language-") {
-            if !lang.is_empty() {
-                return Some(lang.to_string());
-            }
+        if let Some(lang) = class_name.strip_prefix("language-")
+            && !lang.is_empty()
+        {
+            return Some(lang.to_string());
         }
     }
     None
