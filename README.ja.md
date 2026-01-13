@@ -20,6 +20,16 @@ stdin から読み取り、HTML をファイルに保存します。
 cat input.tmd | cargo run -p typmark-cli -- > output.html
 ```
 
+CSS を埋め込んだ完全な HTML を出力します。これがデフォルトで、テーマは dark です。
+```
+cargo run -p typmark-cli -- --render input.tmd > output.html
+```
+
+レンダラーを通さずに生の HTML を出力します。
+```
+cargo run -p typmark-cli -- --raw input.tmd > output.html
+```
+
 ## インストール
 TypMark CLI はこのリポジトリからビルドします。
 
@@ -52,3 +62,4 @@ CLI リファレンス
 ## Workspace
 - crates/typmark-core: 解析、解決、HTML 出力の中核
 - crates/typmark-cli: CLI
+- crates/typmark-renderer: HTML ラップとアセット

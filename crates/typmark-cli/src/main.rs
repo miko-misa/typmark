@@ -7,6 +7,7 @@ use typmark_core::{
     Diagnostic, DiagnosticSeverity, HtmlEmitOptions, emit_html_sanitized_with_options,
     emit_html_with_options, parse, resolve,
 };
+use typmark_renderer::{Renderer, Theme};
 
 fn main() {
     let mut input: Option<String> = None;
@@ -14,6 +15,9 @@ fn main() {
     let mut simple_code_blocks = false;
     let mut wrap_sections = true;
     let mut diagnostics_mode: Option<DiagnosticsMode> = None;
+    let mut render = true;
+    let mut render_js = false;
+    let mut theme = Theme::Dark;
 
     let mut args = env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -25,6 +29,29 @@ fn main() {
             "--sanitized" => sanitized = true,
             "--simple-code" => simple_code_blocks = true,
             "--no-section-wrap" => wrap_sections = false,
+            "--render" => render = true,
+            "--render-js" => {
+                render = true;
+                render_js = true;
+            }
+            "--raw" => render = false,
+            "--theme" => {
+                let value = args.next().unwrap_or_else(|| {
+                    eprintln!("--theme expects: auto | light | dark");
+                    print_usage();
+                    process::exit(2);
+                });
+                theme = match value.as_str() {
+                    "auto" => Theme::Auto,
+                    "light" => Theme::Light,
+                    "dark" => Theme::Dark,
+                    _ => {
+                        eprintln!("--theme expects: auto | light | dark");
+                        print_usage();
+                        process::exit(2);
+                    }
+                };
+            }
             "--diagnostics" => {
                 let mode = match args.next().as_deref() {
                     Some("json") => DiagnosticsMode::Json,
@@ -90,7 +117,14 @@ fn main() {
         emit_html_with_options(&resolved.document.blocks, &options)
     };
 
-    print!("{}", html);
+    if render {
+        let renderer = Renderer::new(theme);
+        let highlighted = renderer.highlight_html(&html);
+        let wrapped = renderer.embed_html(&highlighted, true, render_js);
+        print!("{}", wrapped);
+    } else {
+        print!("{}", html);
+    }
 
     if resolved
         .diagnostics
@@ -103,7 +137,7 @@ fn main() {
 
 fn print_usage() {
     eprintln!(
-        "Usage: typmark-cli [--sanitized] [--simple-code] [--no-section-wrap] [--diagnostics json|pretty] [input]"
+        "Usage: typmark-cli [--sanitized] [--simple-code] [--no-section-wrap] [--render|--render-js|--raw] [--theme auto|light|dark] [--diagnostics json|pretty] [input]"
     );
 }
 

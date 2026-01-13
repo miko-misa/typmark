@@ -70,3 +70,49 @@ fn diagnostics_json_reports_warning_and_exit_code() {
         "expected W_REF_MISSING in stderr"
     );
 }
+
+#[test]
+fn render_wraps_html_with_assets() {
+    let input = temp_file("render", "Paragraph.\n");
+    let output = Command::new(bin_path())
+        .args([input.to_str().expect("path")])
+        .output()
+        .expect("run");
+
+    assert!(output.status.success(), "expected success exit code");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("<!DOCTYPE html>"), "expected HTML wrapper");
+    assert!(stdout.contains("<style>"), "expected inline CSS");
+    assert!(!stdout.contains("<script>"), "expected no inline JS by default");
+}
+
+#[test]
+fn render_allows_theme_selection() {
+    let input = temp_file("render_theme", "Paragraph.\n");
+    let output = Command::new(bin_path())
+        .args([
+            "--theme",
+            "dark",
+            input.to_str().expect("path"),
+        ])
+        .output()
+        .expect("run");
+
+    assert!(output.status.success(), "expected success exit code");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("<!DOCTYPE html>"), "expected HTML wrapper");
+}
+
+#[test]
+fn raw_outputs_fragment_html() {
+    let input = temp_file("raw", "Paragraph.\n");
+    let output = Command::new(bin_path())
+        .args(["--raw", input.to_str().expect("path")])
+        .output()
+        .expect("run");
+
+    assert!(output.status.success(), "expected success exit code");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.contains("<!DOCTYPE html>"), "expected raw HTML");
+    assert!(stdout.contains("<p>Paragraph.</p>"));
+}

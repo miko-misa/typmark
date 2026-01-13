@@ -20,6 +20,16 @@ Read from stdin and write HTML to a file.
 cat input.tmd | cargo run -p typmark-cli -- > output.html
 ```
 
+Render a full HTML document with embedded CSS. This is the default output, using the dark theme.
+```
+cargo run -p typmark-cli -- --render input.tmd > output.html
+```
+
+Output raw HTML without renderer wrapping.
+```
+cargo run -p typmark-cli -- --raw input.tmd > output.html
+```
+
 ## Install
 TypMark CLI is built from source in this repository.
 
@@ -52,6 +62,7 @@ Language reference
 ## Workspace
 - crates/typmark-core: parse, resolve, and HTML emission
 - crates/typmark-cli: CLI
+- crates/typmark-renderer: HTML wrapping and assets
 
 ## Japanese
 README in Japanese is in README.ja.md.

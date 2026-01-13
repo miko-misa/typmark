@@ -28,6 +28,18 @@ Use simple code block output.
 --no-section-wrap
 Do not wrap sections with section tags.
 
+--render
+Wrap output in a full HTML document with inline CSS.
+
+--render-js
+Wrap output in a full HTML document with inline CSS and JS.
+
+--raw
+Output raw HTML without renderer wrapping.
+
+--theme auto|light|dark
+Select the theme for rendered output. Default is dark.
+
 --help
 Print usage help.
 
@@ -47,4 +59,16 @@ typmark-cli input.tmd > output.html
 
 ```
 cat input.tmd | typmark-cli --diagnostics pretty
+```
+
+```
+typmark-cli --render input.tmd > output.html
+```
+
+```
+typmark-cli --render --theme dark input.tmd > output.html
+```
+
+```
+typmark-cli --raw input.tmd > output.html
 ```

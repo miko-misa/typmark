@@ -28,6 +28,18 @@ HTML をサニタイズします。
 --no-section-wrap
 セクションのラップを行いません。
 
+--render
+HTML を完全なドキュメントとして出力し、CSS を埋め込みます。
+
+--render-js
+HTML を完全なドキュメントとして出力し、CSS と JS を埋め込みます。
+
+--raw
+レンダラーを通さずに生の HTML を出力します。
+
+--theme auto|light|dark
+レンダリング時のテーマを指定します。デフォルトは dark です。
+
 --help
 使い方を表示します。
 
@@ -47,4 +59,16 @@ typmark-cli input.tmd > output.html
 
 ```
 cat input.tmd | typmark-cli --diagnostics pretty
+```
+
+```
+typmark-cli --render input.tmd > output.html
+```
+
+```
+typmark-cli --render --theme dark input.tmd > output.html
+```
+
+```
+typmark-cli --raw input.tmd > output.html
 ```
