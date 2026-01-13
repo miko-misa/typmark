@@ -400,8 +400,7 @@ impl Parser {
             } else if self.is_block_start(line) {
                 break;
             }
-            if let Some((label, definition, next)) =
-                parse_link_reference_definition_lines(lines, i)
+            if let Some((label, definition, next)) = parse_link_reference_definition_lines(lines, i)
                 && content_lines.is_empty()
             {
                 self.link_defs.entry(label).or_insert(definition);
@@ -980,8 +979,7 @@ impl Parser {
                                 k += 1;
                             }
                             if k < lines.len()
-                                && let Some(next_marker) =
-                                    parse_list_marker(&lines[k].text)
+                                && let Some(next_marker) = parse_list_marker(&lines[k].text)
                                 && next_marker.ordered == marker.ordered
                                 && next_marker.marker == marker.marker
                             {
@@ -2247,8 +2245,7 @@ impl Parser {
                 start: opener_node.span.start,
                 end: opener_node.span.start + opener_remain,
             };
-            let text =
-                std::iter::repeat_n(opener.ch as char, opener_remain).collect::<String>();
+            let text = std::iter::repeat_n(opener.ch as char, opener_remain).collect::<String>();
             replacement.push(Inline {
                 span,
                 kind: InlineKind::Text(text),
@@ -2278,8 +2275,7 @@ impl Parser {
                 start: closer_node.span.end.saturating_sub(closer_remain),
                 end: closer_node.span.end,
             };
-            let text =
-                std::iter::repeat_n(closer.ch as char, closer_remain).collect::<String>();
+            let text = std::iter::repeat_n(closer.ch as char, closer_remain).collect::<String>();
             replacement.push(Inline {
                 span,
                 kind: InlineKind::Text(text),
@@ -2666,9 +2662,7 @@ impl Parser {
                 );
                 continue;
             }
-            if allow_labels
-                && let Some((range_part, label_part)) = entry.split_once(':')
-            {
+            if allow_labels && let Some((range_part, label_part)) = entry.split_once(':') {
                 if let Ok(line) = range_part.parse::<u32>() {
                     if line == 0 {
                         self.push_diag(
@@ -2692,7 +2686,10 @@ impl Parser {
                         );
                         continue;
                     }
-                    ranges.push(LineRange { start: line, end: line });
+                    ranges.push(LineRange {
+                        start: line,
+                        end: line,
+                    });
                     labels.push(LineLabel {
                         line,
                         label: Label {
