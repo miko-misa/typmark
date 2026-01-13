@@ -183,7 +183,7 @@ $$
 出力は Typst の SVG になる。失敗した場合は元の文字列を error 用の class で出力する。
 
 ## コードブロック
-コードフェンスは figure で出力される。各行に data-line が付く。
+コードフェンスは figure で出力される。各行に data-line が付く。言語指定がない場合も同じ。
 
 入力
 ````
@@ -197,17 +197,11 @@ let b = 2;
 出力
 ```
 <figure class="TypMark-codeblock" data-typmark="codeblock" id="code" data-note="keep" data-hl="2:printf" data-diff_del="3" data-lang="rs">
-  <pre class="TypMark-pre">
-    <code class="language-rs">
-      <span class="line" data-line="1">let a = 1;</span>
-      <span class="line highlighted" data-line="2" data-highlighted-line id="printf" data-line-label="printf">printf(&quot;hi&quot;);</span>
-      <span class="line diff del" data-line="3" data-diff="del">let b = 2;</span>
-    </code>
-  </pre>
+  <pre class="TypMark-pre"><code class="language-rs"><span class="line" data-line="1">let a = 1;</span><span class="line highlighted" data-line="2" data-highlighted-line id="printf" data-line-label="printf">printf(&quot;hi&quot;);</span><span class="line diff del" data-line="3" data-diff="del">let b = 2;</span></code></pre>
 </figure>
 ```
 
-インデントのコードブロックは簡易出力になる。メタ情報やラベルがある場合は figure になる。
+インデントのコードブロックは簡易出力になる。
 
 ## 表
 入力

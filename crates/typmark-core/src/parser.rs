@@ -1,7 +1,7 @@
 use crate::ast::{
-    AttrItem, AttrList, AttrValue, Block, BlockKind, BoxBlock, CodeBlock, CodeMeta, Document,
-    Inline, InlineKind, InlineSeq, Label, LineLabel, LineRange, LinkDefinition, LinkRefMeta, List,
-    ListItem, Table, TableAlign,
+    AttrItem, AttrList, AttrValue, Block, BlockKind, BoxBlock, CodeBlock, CodeBlockKind, CodeMeta,
+    Document, Inline, InlineKind, InlineSeq, Label, LineLabel, LineRange, LinkDefinition,
+    LinkRefMeta, List, ListItem, Table, TableAlign,
 };
 use crate::diagnostic::{
     Diagnostic, DiagnosticSeverity, E_ATTR_SYNTAX, E_CODE_CONFLICT, E_MATH_INLINE_NL,
@@ -506,6 +506,7 @@ impl Parser {
                 span,
                 attrs: block_attrs,
                 kind: BlockKind::CodeBlock(CodeBlock {
+                    kind: CodeBlockKind::Fenced,
                     lang,
                     info_attrs,
                     meta,
@@ -562,6 +563,7 @@ impl Parser {
                 span,
                 attrs: AttrList::default(),
                 kind: BlockKind::CodeBlock(CodeBlock {
+                    kind: CodeBlockKind::Indented,
                     lang: None,
                     info_attrs: AttrList::default(),
                     meta,

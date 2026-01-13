@@ -23,6 +23,10 @@ int a = 1;
 int b = 2;
 ```
 
+```
+plain fenced
+```
+
    ```txt
    alpha
     beta

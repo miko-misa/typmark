@@ -81,10 +81,17 @@ pub enum TableAlign {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CodeBlock {
+    pub kind: CodeBlockKind,
     pub lang: Option<String>,
     pub info_attrs: AttrList,
     pub meta: CodeMeta,
     pub text: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CodeBlockKind {
+    Fenced,
+    Indented,
 }
 
 #[derive(Clone, Debug, PartialEq)]

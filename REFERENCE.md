@@ -183,7 +183,7 @@ $$
 Output is Typst SVG. When rendering fails, the raw text is emitted with an error class.
 
 ## Code blocks
-Fenced code blocks use figure. Each line has data-line.
+Fenced code blocks use figure. Each line has data-line. This applies even when the language token is omitted.
 
 Input
 ````
@@ -197,17 +197,11 @@ let b = 2;
 Output
 ```
 <figure class="TypMark-codeblock" data-typmark="codeblock" id="code" data-note="keep" data-hl="2:printf" data-diff_del="3" data-lang="rs">
-  <pre class="TypMark-pre">
-    <code class="language-rs">
-      <span class="line" data-line="1">let a = 1;</span>
-      <span class="line highlighted" data-line="2" data-highlighted-line id="printf" data-line-label="printf">printf(&quot;hi&quot;);</span>
-      <span class="line diff del" data-line="3" data-diff="del">let b = 2;</span>
-    </code>
-  </pre>
+  <pre class="TypMark-pre"><code class="language-rs"><span class="line" data-line="1">let a = 1;</span><span class="line highlighted" data-line="2" data-highlighted-line id="printf" data-line-label="printf">printf(&quot;hi&quot;);</span><span class="line diff del" data-line="3" data-diff="del">let b = 2;</span></code></pre>
 </figure>
 ```
 
-Indented code blocks use a simple output. If they have metadata or a label, they use figure.
+Indented code blocks use a simple output.
 
 ## Tables
 Input

@@ -159,6 +159,7 @@ pub fn render_math(source: &str, display: bool) -> Result<String, String> {
     };
     if display {
         preamble.push_str("#set block(spacing: 0.5em)\n");
+        preamble.push_str("#set text(size: 14pt)\n");
     }
 
     let wrapped_source = format!(
@@ -216,6 +217,50 @@ pub fn render_math(source: &str, display: bool) -> Result<String, String> {
             Err(source.to_string())
         }
     }
+}
+
+pub fn prefix_svg_ids(svg: &str, prefix: &str) -> String {
+    let mut ids = Vec::new();
+    let mut search = 0;
+    while let Some(symbol_pos) = svg[search..].find("<symbol") {
+        let symbol_start = search + symbol_pos;
+        let id_attr_pos = match svg[symbol_start..].find("id=\"") {
+            Some(pos) => symbol_start + pos + 4,
+            None => {
+                search = symbol_start + 7;
+                continue;
+            }
+        };
+        let id_end = match svg[id_attr_pos..].find('"') {
+            Some(pos) => id_attr_pos + pos,
+            None => break,
+        };
+        ids.push(svg[id_attr_pos..id_end].to_string());
+        search = id_end;
+    }
+
+    if ids.is_empty() {
+        return svg.to_string();
+    }
+
+    let mut out = svg.to_string();
+    for id in ids {
+        let new_id = format!("{}-{}", prefix, id);
+        out = out.replace(&format!("id=\"{}\"", id), &format!("id=\"{}\"", new_id));
+        out = out.replace(
+            &format!("xlink:href=\"#{}\"", id),
+            &format!("xlink:href=\"#{}\"", new_id),
+        );
+        out = out.replace(
+            &format!("href=\"#{}\"", id),
+            &format!("href=\"#{}\"", new_id),
+        );
+        out = out.replace(
+            &format!("url(#{})", id),
+            &format!("url(#{})", new_id),
+        );
+    }
+    out
 }
 
 fn normalize_svg_ids(svg: &str) -> String {

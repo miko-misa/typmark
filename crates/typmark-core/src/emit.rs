@@ -1,8 +1,8 @@
 use crate::ast::{
-    AttrItem, Block, BlockKind, BoxBlock, CodeBlock, CodeMeta, Inline, InlineKind, Label,
-    LineRange, List, ResolvedRef, Table, TableAlign,
+    AttrItem, Block, BlockKind, BoxBlock, CodeBlock, CodeBlockKind, CodeMeta, Inline, InlineKind,
+    Label, LineRange, List, ResolvedRef, Table, TableAlign,
 };
-use crate::math::render_math;
+use crate::math::{prefix_svg_ids, render_math};
 use ammonia::Builder;
 use std::collections::{HashMap, HashSet};
 
@@ -212,6 +212,7 @@ struct HtmlWriter {
     out: String,
     indent: usize,
     options: HtmlEmitOptions,
+    math_counter: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -227,6 +228,7 @@ impl HtmlWriter {
             out: String::new(),
             indent: 0,
             options,
+            math_counter: 0,
         }
     }
 
@@ -258,10 +260,15 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
                 let attrs = compose_block_attrs(label.as_ref(), &block.attrs.items);
                 writer.line(&format!("<section{}>", attrs));
                 writer.indent += 1;
+                let title_html = render_inlines_with_context(
+                    title,
+                    RenderContext::Title,
+                    &mut writer.math_counter,
+                );
                 let heading = format!(
                     "<h{}>{}</h{}>",
                     level,
-                    render_inlines_with_context(title, RenderContext::Title),
+                    title_html,
                     level
                 );
                 writer.line(&heading);
@@ -273,12 +280,14 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
             } else {
                 // CommonMark-compatible: just emit heading without wrapper
                 let attrs = compose_block_attrs(label.as_ref(), &block.attrs.items);
+                let title_html = render_inlines_with_context(
+                    title,
+                    RenderContext::Title,
+                    &mut writer.math_counter,
+                );
                 writer.line(&format!(
                     "<h{}{}>{}</h{}>",
-                    level,
-                    attrs,
-                    render_inlines_with_context(title, RenderContext::Title),
-                    level
+                    level, attrs, title_html, level
                 ));
                 for child in children {
                     emit_block(writer, child);
@@ -287,20 +296,26 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
         }
         BlockKind::Heading { level, title } => {
             let attrs = compose_block_attrs(block.attrs.label.as_ref(), &block.attrs.items);
+            let title_html = render_inlines_with_context(
+                title,
+                RenderContext::Title,
+                &mut writer.math_counter,
+            );
             writer.line(&format!(
                 "<h{}{}>{}</h{}>",
-                level,
-                attrs,
-                render_inlines_with_context(title, RenderContext::Title),
-                level
+                level, attrs, title_html, level
             ));
         }
         BlockKind::Paragraph { content } => {
             let attrs = compose_block_attrs(block.attrs.label.as_ref(), &block.attrs.items);
+            let inline_html = render_inlines_with_context(
+                content,
+                RenderContext::Normal,
+                &mut writer.math_counter,
+            );
             writer.line(&format!(
                 "<p{}>{}</p>",
-                attrs,
-                render_inlines_with_context(content, RenderContext::Normal)
+                attrs, inline_html
             ));
         }
         BlockKind::BlockQuote { blocks } => {
@@ -353,8 +368,11 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
                     // In tight lists, unwrap the first paragraph (if any)
                     if let BlockKind::Paragraph { content } = &item.blocks[0].kind {
                         // Render <li> and first paragraph inline without newline
-                        let inline_content =
-                            render_inlines_with_context(content, RenderContext::Normal);
+                        let inline_content = render_inlines_with_context(
+                            content,
+                            RenderContext::Normal,
+                            &mut writer.math_counter,
+                        );
                         writer.out.push_str(&"  ".repeat(writer.indent));
                         writer.out.push_str("<li");
                         writer.out.push_str(task_class);
@@ -448,9 +466,14 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
             writer.line(&format!("<div {}>", attrs));
             writer.indent += 1;
             if let Some(title) = title {
+                let title_html = render_inlines_with_context(
+                    title,
+                    RenderContext::Title,
+                    &mut writer.math_counter,
+                );
                 writer.line(&format!(
                     "<div class=\"TypMark-box-title\">{}</div>",
-                    render_inlines_with_context(title, RenderContext::Title)
+                    title_html
                 ));
             }
             writer.line("<div class=\"TypMark-box-body\">");
@@ -465,7 +488,7 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
         }
         BlockKind::MathBlock { typst_src } => {
             let attrs = compose_block_attrs(block.attrs.label.as_ref(), &block.attrs.items);
-            match render_math(typst_src, true) {
+            match render_math_with_prefix(typst_src, true, &mut writer.math_counter) {
                 Ok(svg) => writer.line(&format!(
                     "<div class=\"TypMark-math-block\"{}>{}</div>",
                     attrs, svg
@@ -482,6 +505,7 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
             writer.line(&format!("<hr{} />", attrs));
         }
         BlockKind::CodeBlock(CodeBlock {
+            kind,
             lang,
             info_attrs,
             meta,
@@ -489,6 +513,7 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
         }) => {
             emit_code_block(
                 writer,
+                *kind,
                 lang.as_deref(),
                 &info_attrs.items,
                 meta,
@@ -518,7 +543,11 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
 fn emit_block_tight(writer: &mut HtmlWriter, block: &Block) -> bool {
     match &block.kind {
         BlockKind::Paragraph { content } => {
-            let inline = render_inlines_with_context(content, RenderContext::Normal);
+            let inline = render_inlines_with_context(
+                content,
+                RenderContext::Normal,
+                &mut writer.math_counter,
+            );
             writer.out.push_str(&"  ".repeat(writer.indent));
             writer.out.push_str(&inline);
             false
@@ -533,10 +562,15 @@ fn emit_block_tight(writer: &mut HtmlWriter, block: &Block) -> bool {
                 let attrs = compose_block_attrs(label.as_ref(), &block.attrs.items);
                 writer.line(&format!("<section{}>", attrs));
                 writer.indent += 1;
+                let title_html = render_inlines_with_context(
+                    title,
+                    RenderContext::Title,
+                    &mut writer.math_counter,
+                );
                 let heading = format!(
                     "<h{}>{}</h{}>",
                     level,
-                    render_inlines_with_context(title, RenderContext::Title),
+                    title_html,
                     level
                 );
                 writer.line(&heading);
@@ -551,12 +585,14 @@ fn emit_block_tight(writer: &mut HtmlWriter, block: &Block) -> bool {
                 true
             } else {
                 let attrs = compose_block_attrs(label.as_ref(), &block.attrs.items);
+                let title_html = render_inlines_with_context(
+                    title,
+                    RenderContext::Title,
+                    &mut writer.math_counter,
+                );
                 writer.line(&format!(
                     "<h{}{}>{}</h{}>",
-                    level,
-                    attrs,
-                    render_inlines_with_context(title, RenderContext::Title),
-                    level
+                    level, attrs, title_html, level
                 ));
                 let mut last_ended = true;
                 for (idx, child) in children.iter().enumerate() {
@@ -578,6 +614,7 @@ fn emit_block_tight(writer: &mut HtmlWriter, block: &Block) -> bool {
 
 fn emit_code_block(
     writer: &mut HtmlWriter,
+    kind: CodeBlockKind,
     lang: Option<&str>,
     info_items: &[AttrItem],
     meta: &CodeMeta,
@@ -604,17 +641,7 @@ fn emit_code_block(
         }
         writer.out.push_str("</code></pre>\n");
     } else {
-        // Check if this is a simple indented code block (no language, no metadata, no label)
-        let is_simple = lang.is_none()
-            && meta.hl.is_empty()
-            && meta.diff_add.is_empty()
-            && meta.diff_del.is_empty()
-            && meta.line_labels.is_empty()
-            && label.is_none()
-            && items.is_empty()
-            && info_items.is_empty();
-
-        if is_simple {
+        if kind == CodeBlockKind::Indented {
             // Emit simple CommonMark-style pre/code for indented code blocks
             // Use code-specific escaping for code contents.
             let escaped = escape_html_code(text);
@@ -636,13 +663,13 @@ fn emit_code_block(
                 attrs, lang_attr
             ));
             writer.indent += 1;
-            writer.line("<pre class=\"TypMark-pre\">");
-            writer.indent += 1;
             let code_class = lang
                 .map(|value| format!("language-{}", escape_attr(value)))
                 .unwrap_or_else(|| "language-".to_string());
-            writer.line(&format!("<code class=\"{}\">", code_class));
-            writer.indent += 1;
+            writer.out.push_str(&"  ".repeat(writer.indent));
+            writer
+                .out
+                .push_str(&format!("<pre class=\"TypMark-pre\"><code class=\"{}\">", code_class));
 
             let lines = split_lines_preserve(text);
             for (idx, line) in lines.iter().enumerate() {
@@ -679,24 +706,35 @@ fn emit_code_block(
                         escape_attr(&label.label.name)
                     ));
                 }
-                writer.line(&format!(
+                writer.out.push_str(&format!(
                     "<span {}>{}</span>",
                     attrs,
                     escape_html_code(line)
                 ));
             }
 
-            writer.indent -= 1;
-            writer.line("</code>");
-            writer.indent -= 1;
-            writer.line("</pre>");
+            writer.out.push_str("</code></pre>\n");
             writer.indent -= 1;
             writer.line("</figure>");
         }
     }
 }
 
-fn render_inlines_with_context(inlines: &[Inline], context: RenderContext) -> String {
+fn render_math_with_prefix(
+    typst_src: &str,
+    display: bool,
+    math_counter: &mut usize,
+) -> Result<String, String> {
+    *math_counter += 1;
+    let prefix = format!("tm-m{}", *math_counter);
+    render_math(typst_src, display).map(|svg| prefix_svg_ids(&svg, &prefix))
+}
+
+fn render_inlines_with_context(
+    inlines: &[Inline],
+    context: RenderContext,
+    math_counter: &mut usize,
+) -> String {
     let mut out = String::new();
     for inline in inlines {
         match &inline.kind {
@@ -706,14 +744,16 @@ fn render_inlines_with_context(inlines: &[Inline], context: RenderContext) -> St
                 out.push_str(&escape_html_code(text));
                 out.push_str("</code>");
             }
-            InlineKind::MathInline { typst_src } => match render_math(typst_src, false) {
-                Ok(svg) => out.push_str(&svg),
-                Err(source) => {
-                    out.push_str("<span class=\"TypMark-math-inline--error\">");
-                    out.push_str(&escape_text(&source));
-                    out.push_str("</span>");
+            InlineKind::MathInline { typst_src } => {
+                match render_math_with_prefix(typst_src, false, math_counter) {
+                    Ok(svg) => out.push_str(&svg),
+                    Err(source) => {
+                        out.push_str("<span class=\"TypMark-math-inline--error\">");
+                        out.push_str(&escape_text(&source));
+                        out.push_str("</span>");
+                    }
                 }
-            },
+            }
             InlineKind::SoftBreak => out.push('\n'),
             InlineKind::HardBreak => out.push_str("<br />\n"),
             InlineKind::Ref {
@@ -726,21 +766,22 @@ fn render_inlines_with_context(inlines: &[Inline], context: RenderContext) -> St
                     bracket.as_deref(),
                     resolved.as_ref(),
                     context,
+                    math_counter,
                 ));
             }
             InlineKind::Emph(children) => {
                 out.push_str("<em>");
-                out.push_str(&render_inlines_with_context(children, context));
+                out.push_str(&render_inlines_with_context(children, context, math_counter));
                 out.push_str("</em>");
             }
             InlineKind::Strong(children) => {
                 out.push_str("<strong>");
-                out.push_str(&render_inlines_with_context(children, context));
+                out.push_str(&render_inlines_with_context(children, context, math_counter));
                 out.push_str("</strong>");
             }
             InlineKind::Strikethrough(children) => {
                 out.push_str("<del>");
-                out.push_str(&render_inlines_with_context(children, context));
+                out.push_str(&render_inlines_with_context(children, context, math_counter));
                 out.push_str("</del>");
             }
             InlineKind::Link {
@@ -758,7 +799,7 @@ fn render_inlines_with_context(inlines: &[Inline], context: RenderContext) -> St
                         out.push('"');
                     }
                     out.push('>');
-                    out.push_str(&render_inlines_with_context(children, context));
+                    out.push_str(&render_inlines_with_context(children, context, math_counter));
                     out.push_str("</a>");
                 }
                 RenderContext::ReferenceText => {
@@ -766,6 +807,7 @@ fn render_inlines_with_context(inlines: &[Inline], context: RenderContext) -> St
                     out.push_str(&render_inlines_with_context(
                         children,
                         RenderContext::ReferenceText,
+                        math_counter,
                     ));
                     out.push_str("</span>");
                 }
@@ -776,7 +818,7 @@ fn render_inlines_with_context(inlines: &[Inline], context: RenderContext) -> St
                 meta,
             } => {
                 out.push('[');
-                out.push_str(&render_inlines_with_context(children, context));
+                out.push_str(&render_inlines_with_context(children, context, math_counter));
                 out.push(']');
                 if meta.label_open_span.is_some() {
                     out.push('[');
@@ -789,6 +831,7 @@ fn render_inlines_with_context(inlines: &[Inline], context: RenderContext) -> St
                     out.push_str(&render_inlines_with_context(
                         alt,
                         RenderContext::ReferenceText,
+                        math_counter,
                     ));
                 }
                 _ => {
@@ -810,11 +853,12 @@ fn render_inlines_with_context(inlines: &[Inline], context: RenderContext) -> St
                     out.push_str(&render_inlines_with_context(
                         alt,
                         RenderContext::ReferenceText,
+                        math_counter,
                     ));
                 }
                 _ => {
                     out.push_str("![");
-                    out.push_str(&render_inlines_with_context(alt, context));
+                    out.push_str(&render_inlines_with_context(alt, context, math_counter));
                     out.push(']');
                     if meta.label_open_span.is_some() {
                         out.push('[');
@@ -834,15 +878,16 @@ fn render_ref(
     bracket: Option<&[Inline]>,
     resolved: Option<&ResolvedRef>,
     context: RenderContext,
+    math_counter: &mut usize,
 ) -> String {
     let display = if let Some(bracket) = bracket {
-        render_inlines_with_context(bracket, RenderContext::ReferenceText)
+        render_inlines_with_context(bracket, RenderContext::ReferenceText, math_counter)
     } else if let Some(ResolvedRef::Block {
         display: Some(text),
         ..
     }) = resolved
     {
-        render_inlines_with_context(text, RenderContext::ReferenceText)
+        render_inlines_with_context(text, RenderContext::ReferenceText, math_counter)
     } else {
         escape_text(&label.name)
     };
@@ -886,7 +931,8 @@ fn task_input_html(checked: bool) -> String {
 }
 
 fn emit_paragraph_with_prefix(writer: &mut HtmlWriter, content: &[Inline], prefix: &str) {
-    let inline = render_inlines_with_context(content, RenderContext::Normal);
+    let inline =
+        render_inlines_with_context(content, RenderContext::Normal, &mut writer.math_counter);
     writer.out.push_str(&"  ".repeat(writer.indent));
     writer.out.push_str("<p>");
     writer.out.push_str(prefix);
@@ -903,7 +949,8 @@ fn emit_table(writer: &mut HtmlWriter, table: &Table, attrs: &str) {
     writer.indent += 1;
     for (idx, cell) in table.headers.iter().enumerate() {
         let align_attr = table_align_attr(table.aligns.get(idx).copied());
-        let inline = render_inlines_with_context(cell, RenderContext::Normal);
+        let inline =
+            render_inlines_with_context(cell, RenderContext::Normal, &mut writer.math_counter);
         writer.line(&format!("<th{}>{}</th>", align_attr, inline));
     }
     writer.indent -= 1;
@@ -918,7 +965,11 @@ fn emit_table(writer: &mut HtmlWriter, table: &Table, attrs: &str) {
             writer.indent += 1;
             for (idx, cell) in row.iter().enumerate() {
                 let align_attr = table_align_attr(table.aligns.get(idx).copied());
-                let inline = render_inlines_with_context(cell, RenderContext::Normal);
+                let inline = render_inlines_with_context(
+                    cell,
+                    RenderContext::Normal,
+                    &mut writer.math_counter,
+                );
                 writer.line(&format!("<td{}>{}</td>", align_attr, inline));
             }
             writer.indent -= 1;
