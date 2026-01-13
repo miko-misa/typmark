@@ -6,7 +6,7 @@ resolver = "2"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/miko-misa/typmark"
-rust-version = "1.85"
+rust-version = "1.89"
 
 [workspace.dependencies]
 # 後でここに共通依存を集約（複数クレートでバージョンを揃える）
