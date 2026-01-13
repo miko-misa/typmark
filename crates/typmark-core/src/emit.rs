@@ -6,24 +6,29 @@ use crate::math::render_math;
 use ammonia::Builder;
 use std::collections::{HashMap, HashSet};
 
-const SVG_ALLOWED_TAGS: &[&str] = &["svg", "g", "defs", "path", "clipPath", "use"];
+const SVG_ALLOWED_TAGS: &[&str] = &["svg", "g", "defs", "path", "symbol", "use"];
 
 const SVG_ALLOWED_ATTRS: &[(&str, &[&str])] = &[
-    ("svg", &["xmlns", "viewBox", "width", "height", "class"]),
+    ("svg", &["viewBox", "width", "height", "class"]),
+    ("g", &["transform", "class"]),
     (
-        "g",
+        "path",
         &[
-            "transform",
+            "d",
             "fill",
+            "fill-rule",
             "stroke",
+            "stroke-linecap",
+            "stroke-linejoin",
+            "stroke-miterlimit",
             "stroke-width",
-            "clip-path",
+            "transform",
             "class",
         ],
     ),
-    ("path", &["d", "fill", "stroke", "stroke-width", "class"]),
-    ("clipPath", &["id"]),
-    ("use", &["href", "xlink:href"]),
+    ("defs", &["id"]),
+    ("symbol", &["id", "overflow"]),
+    ("use", &["href", "x", "y", "fill", "fill-rule"]),
 ];
 
 /// Options for HTML emission.
@@ -1110,32 +1115,25 @@ mod tests {
         let samples = [
             "x",
             "x^2",
-            "a/b",
+            "a / b",
             "sqrt(2)",
             "sum_(i=1)^n i",
-            "int_0^1 x^2 dx",
+            "integral_0^1 x^2 dif x",
             "vec(a, b, c)",
-            "matrix((1,2),(3,4))",
-            "cases(1, x > 0; 0, x <= 0)",
+            "mat(1, 2; 3, 4)",
+            "cases(1 \"if\" x > 0, 0 \"else\")",
         ];
 
         let mut observed: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-        let mut rendered_any = false;
         for display in [false, true] {
             for sample in samples {
-                if let Ok(svg) = render_math(sample, display) {
-                    rendered_any = true;
-                    let tags = collect_svg_tags(&svg);
-                    for (tag, attrs) in tags {
-                        observed.entry(tag).or_default().extend(attrs);
-                    }
+                let svg = render_math(sample, display)
+                    .unwrap_or_else(|_| panic!("math render failed for: {}", sample));
+                let tags = collect_svg_tags(&svg);
+                for (tag, attrs) in tags {
+                    observed.entry(tag).or_default().extend(attrs);
                 }
             }
-        }
-
-        if !rendered_any {
-            eprintln!("svg allowlist test skipped: math rendering unavailable");
-            return;
         }
 
         let expected_tags: BTreeSet<String> = SVG_ALLOWED_TAGS

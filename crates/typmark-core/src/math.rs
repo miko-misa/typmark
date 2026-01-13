@@ -1,39 +1,40 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use comemo::Prehashed;
 use lru::LruCache;
 use once_cell::sync::Lazy;
 use typst::diag::{FileError, FileResult};
-use typst::eval::Tracer;
 use typst::foundations::{Bytes, Datetime};
+use typst::layout::PagedDocument;
 use typst::syntax::{FileId, Source, VirtualPath};
 use typst::text::{Font, FontBook};
-use typst::{Library, World};
+use typst::utils::LazyHash;
+use typst::{Library, LibraryExt, World};
 
 /// The state for a single Typst compilation.
 struct MathWorld<'a> {
-    library: &'a Prehashed<Library>,
-    book: &'a Prehashed<FontBook>,
+    library: &'a LazyHash<Library>,
+    book: LazyHash<FontBook>,
     fonts: &'a [Font],
     source: Source,
+    main_id: FileId,
 }
 
 impl World for MathWorld<'_> {
-    fn library(&self) -> &Prehashed<Library> {
+    fn library(&self) -> &LazyHash<Library> {
         self.library
     }
 
-    fn book(&self) -> &Prehashed<FontBook> {
-        self.book
+    fn book(&self) -> &LazyHash<FontBook> {
+        &self.book
     }
 
-    fn main(&self) -> Source {
-        self.source.clone()
+    fn main(&self) -> FileId {
+        self.main_id
     }
 
     fn source(&self, id: FileId) -> FileResult<Source> {
-        if id == self.main().id() {
+        if id == self.main_id {
             Ok(self.source.clone())
         } else {
             Err(FileError::NotFound(id.vpath().as_rooted_path().into()))
@@ -58,9 +59,24 @@ struct FontSlot {
     fonts: Vec<Font>,
 }
 
+fn push_font_bytes<T>(book: &mut FontBook, fonts: &mut Vec<Font>, bytes: T)
+where
+    T: AsRef<[u8]> + Send + Sync + 'static,
+{
+    let buffer = Bytes::new(bytes);
+    for font in Font::iter(buffer) {
+        book.push(font.info().clone());
+        fonts.push(font);
+    }
+}
+
 fn load_fonts() -> FontSlot {
     let mut book = FontBook::new();
     let mut fonts = Vec::new();
+
+    for font_bytes in typst_assets::fonts() {
+        push_font_bytes(&mut book, &mut fonts, font_bytes);
+    }
 
     let mut paths = Vec::new();
     if let Ok(value) = std::env::var("TYPMARK_FONT_PATHS") {
@@ -80,11 +96,7 @@ fn load_fonts() -> FontSlot {
 
     for path in expand_font_paths(&paths) {
         if let Ok(font_bytes) = std::fs::read(&path) {
-            let buffer = Bytes::from(font_bytes);
-            for font in Font::iter(buffer) {
-                book.push(font.info().clone());
-                fonts.push(font);
-            }
+            push_font_bytes(&mut book, &mut fonts, font_bytes);
         }
     }
 
@@ -124,7 +136,7 @@ type CacheKey = (String, bool); // (source, is_display_mode)
 type Cache = Mutex<LruCache<CacheKey, String>>;
 
 static FONT_SLOT: Lazy<FontSlot> = Lazy::new(load_fonts);
-static TYPST_LIBRARY: Lazy<Prehashed<Library>> = Lazy::new(|| Prehashed::new(Library::default()));
+static TYPST_LIBRARY: Lazy<LazyHash<Library>> = Lazy::new(|| LazyHash::new(Library::default()));
 static RENDER_CACHE: Lazy<Cache> = Lazy::new(|| Mutex::new(LruCache::new(100.try_into().unwrap())));
 
 /// Renders a Typst math snippet to an SVG string.
@@ -140,41 +152,47 @@ pub fn render_math(source: &str, display: bool) -> Result<String, String> {
 
     // Create a Typst world for this compilation
 
-    let preamble = if display {
-        "#set page(width: auto, height: auto, margin: 0.5em)\n#set block(spacing: 0.5em)\n"
+    let mut preamble = if display {
+        String::from("#set page(width: auto, height: auto, margin: 0.5em)\n")
     } else {
-        ""
+        String::from("#set page(width: auto, height: auto, margin: 0.2em)\n")
     };
+    if display {
+        preamble.push_str("#set block(spacing: 0.5em)\n");
+    }
 
     let wrapped_source = format!(
-        "{}#{{math.equation(block: {}, {repr})}}",
-        preamble,
-        display,
-        repr = source
+        "{}#math.equation(block: {}, $ {} $)",
+        preamble, display, source
     );
 
     let main_file_id = FileId::new(None, VirtualPath::new("main.typ"));
 
     let world = MathWorld {
         library: &TYPST_LIBRARY,
-
-        book: &Prehashed::new(FONT_SLOT.book.clone()),
-
+        book: LazyHash::new(FONT_SLOT.book.clone()),
         fonts: &FONT_SLOT.fonts,
-
         source: Source::new(main_file_id, wrapped_source),
+        main_id: main_file_id,
     };
 
     // Compile and render
 
     let result = {
-        let mut tracer = Tracer::new();
-
-        typst::compile(&world, &mut tracer).ok().and_then(|doc| {
+        let warned = typst::compile::<PagedDocument>(&world);
+        if std::env::var("TYPMARK_DEBUG_MATH").is_ok() {
+            for warning in &warned.warnings {
+                eprintln!(
+                    "typst math warning: {:?}: {}",
+                    warning.severity, warning.message
+                );
+            }
+        }
+        warned.output.ok().and_then(|doc| {
             if doc.pages.is_empty() {
                 None
             } else {
-                Some(typst_svg::svg(&doc.pages[0].frame))
+                Some(typst_svg::svg(&doc.pages[0]))
             }
         })
     };
@@ -186,6 +204,19 @@ pub fn render_math(source: &str, display: bool) -> Result<String, String> {
             Ok(svg)
         }
 
-        None => Err(source.to_string()),
+        None => {
+            if std::env::var("TYPMARK_DEBUG_MATH").is_ok() {
+                let warned = typst::compile::<PagedDocument>(&world);
+                if let Err(errors) = warned.output {
+                    for error in errors {
+                        eprintln!(
+                            "typst math error: {:?}: {}",
+                            error.severity, error.message
+                        );
+                    }
+                }
+            }
+            Err(source.to_string())
+        }
     }
 }
