@@ -576,8 +576,26 @@ impl Parser {
 
     fn parse_math_block(&mut self, lines: &[Line], start: usize) -> Option<(Block, usize)> {
         let line = &lines[start];
-        if line.text.trim() != "$$" {
+        let trimmed = line.text.trim();
+        if !trimmed.starts_with("$$") {
             return None;
+        }
+        if trimmed != "$$" && trimmed.ends_with("$$") && trimmed.len() > 4 {
+            let content = trimmed.trim_start_matches("$$");
+            let content = content.trim_end_matches("$$");
+            let typst_src = content.to_string();
+            let span = Span {
+                start: line.start,
+                end: line.end,
+            };
+            return Some((
+                Block {
+                    span,
+                    attrs: AttrList::default(),
+                    kind: BlockKind::MathBlock { typst_src },
+                },
+                start + 1,
+            ));
         }
         let mut i = start + 1;
         let mut body_lines = Vec::new();
@@ -3572,8 +3590,9 @@ fn split_table_cells(text: &str, base_offset: usize) -> (Vec<TableCellRaw>, bool
                     i += run_len;
                     break;
                 }
-                buf.push(bytes[i] as char);
-                i += 1;
+                let ch = text[i..].chars().next().unwrap();
+                buf.push(ch);
+                i += ch.len_utf8();
             }
             continue;
         }
@@ -3586,8 +3605,9 @@ fn split_table_cells(text: &str, base_offset: usize) -> (Vec<TableCellRaw>, bool
             cell_start = i;
             continue;
         }
-        buf.push(b as char);
-        i += 1;
+        let ch = text[i..].chars().next().unwrap();
+        buf.push(ch);
+        i += ch.len_utf8();
     }
     let cell = finalize_table_cell(&buf, base_offset + cell_start);
     cells.push(cell);
