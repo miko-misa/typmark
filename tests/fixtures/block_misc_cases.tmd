@@ -45,10 +45,10 @@ After
 Alpha
 <span>Beta</span>
 
-Math $a+b$ here.
+Math $a + b$ here.
 
 $$
-a+b
+sum_(i=1)^n i
 $$
 
 ***

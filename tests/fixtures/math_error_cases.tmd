@@ -1,6 +1,6 @@
-Inline math with no font: $a^2 + b^2 = c^2$
+Inline math with invalid syntax: $a^$
 
-Block math with no font:
+Block math with invalid syntax:
 $$
-E = mc^2
+a^
 $$
