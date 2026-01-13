@@ -10,10 +10,10 @@ pub fn build_sections(blocks: Vec<Block>) -> Vec<Block> {
             // Group following blocks until the next heading of the same/higher level.
             let mut children = Vec::new();
             while let Some(next) = iter.peek() {
-                if let Some(next_level) = heading_level(next) {
-                    if next_level <= level {
-                        break;
-                    }
+                if let Some(next_level) = heading_level(next)
+                    && next_level <= level
+                {
+                    break;
                 }
                 if let Some(child) = iter.next() {
                     children.push(child);

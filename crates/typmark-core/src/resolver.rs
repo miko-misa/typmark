@@ -320,15 +320,15 @@ fn check_self_reference_titles(
             BlockKind::Box(BoxBlock {
                 title: Some(title), ..
             }) => {
-                if let Some(label) = block.attrs.label.as_ref() {
-                    if let Some(span) = find_self_ref(title, &label.name) {
-                        diagnostics.push(Diagnostic::new(
-                            source_map.range(span),
-                            DiagnosticSeverity::Error,
-                            E_REF_SELF_TITLE,
-                            "self-reference in title",
-                        ));
-                    }
+                if let Some(label) = block.attrs.label.as_ref()
+                    && let Some(span) = find_self_ref(title, &label.name)
+                {
+                    diagnostics.push(Diagnostic::new(
+                        source_map.range(span),
+                        DiagnosticSeverity::Error,
+                        E_REF_SELF_TITLE,
+                        "self-reference in title",
+                    ));
                 }
             }
             _ => {}
@@ -365,10 +365,10 @@ fn find_self_ref(inlines: &[Inline], label: &str) -> Option<Span> {
                 if ref_label.name == label {
                     return Some(inline.span);
                 }
-                if let Some(bracket) = bracket {
-                    if let Some(span) = find_self_ref(bracket, label) {
-                        return Some(span);
-                    }
+                if let Some(bracket) = bracket
+                    && let Some(span) = find_self_ref(bracket, label)
+                {
+                    return Some(span);
                 }
             }
             InlineKind::Emph(children) | InlineKind::Strong(children) => {

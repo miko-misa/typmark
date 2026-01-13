@@ -413,13 +413,12 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
                     writer.line(&format!("<li{}>", task_class));
                     writer.indent += 1;
                     for (idx, child) in item.blocks.iter().enumerate() {
-                        if idx == 0 {
-                            if let BlockKind::Paragraph { content } = &child.kind {
-                                if let Some(prefix) = &task_prefix {
-                                    emit_paragraph_with_prefix(writer, content, prefix);
-                                    continue;
-                                }
-                            }
+                        if idx == 0
+                            && let BlockKind::Paragraph { content } = &child.kind
+                            && let Some(prefix) = &task_prefix
+                        {
+                            emit_paragraph_with_prefix(writer, content, prefix);
+                            continue;
                         }
                         emit_block(writer, child);
                     }

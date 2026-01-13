@@ -112,15 +112,15 @@ impl Parser {
             }
 
             if let Some(attrs) = self.try_parse_target_line(line) {
-                if let Some(prev) = pending_attrs.take() {
-                    if let Some(span) = prev.span {
-                        self.push_diag(
-                            span,
-                            DiagnosticSeverity::Error,
-                            E_TARGET_ORPHAN,
-                            "target line has no following block",
-                        );
-                    }
+                if let Some(prev) = pending_attrs.take()
+                    && let Some(span) = prev.span
+                {
+                    self.push_diag(
+                        span,
+                        DiagnosticSeverity::Error,
+                        E_TARGET_ORPHAN,
+                        "target line has no following block",
+                    );
                 }
                 pending_attrs = Some(attrs);
                 i += 1;
@@ -215,15 +215,15 @@ impl Parser {
             i = next;
         }
 
-        if let Some(attrs) = pending_attrs {
-            if let Some(span) = attrs.span {
-                self.push_diag(
-                    span,
-                    DiagnosticSeverity::Error,
-                    E_TARGET_ORPHAN,
-                    "target line has no following block",
-                );
-            }
+        if let Some(attrs) = pending_attrs
+            && let Some(span) = attrs.span
+        {
+            self.push_diag(
+                span,
+                DiagnosticSeverity::Error,
+                E_TARGET_ORPHAN,
+                "target line has no following block",
+            );
         }
 
         blocks
@@ -400,23 +400,22 @@ impl Parser {
             } else if self.is_block_start(line) {
                 break;
             }
-            if let Some((label, definition, next)) = parse_link_reference_definition_lines(lines, i)
+            if let Some((label, definition, next)) =
+                parse_link_reference_definition_lines(lines, i)
+                && content_lines.is_empty()
             {
-                if content_lines.is_empty() {
-                    self.link_defs.entry(label).or_insert(definition);
-                    i = next;
-                    continue;
-                }
+                self.link_defs.entry(label).or_insert(definition);
+                i = next;
+                continue;
             }
             content_lines.push(line.clone());
-            if let Some(next) = lines.get(i + 1) {
-                if !line.lazy_continuation {
-                    if let Some(level) = setext_underline_level(&next.text) {
-                        setext_level = Some(level);
-                        setext_end = i + 1;
-                        break;
-                    }
-                }
+            if let Some(next) = lines.get(i + 1)
+                && !line.lazy_continuation
+                && let Some(level) = setext_underline_level(&next.text)
+            {
+                setext_level = Some(level);
+                setext_end = i + 1;
+                break;
             }
             i += 1;
         }
@@ -704,19 +703,19 @@ impl Parser {
                 continue;
             }
             let colons = trimmed.chars().take_while(|c| *c == ':').count();
-            if colons >= 3 && trimmed.chars().all(|c| c == ':') {
-                if let Some(&top) = fence_stack.last() {
-                    if colons >= top {
-                        fence_stack.pop();
-                        if fence_stack.is_empty() {
-                            i += 1;
-                            break;
-                        }
-                        inner_lines.push(candidate.clone());
-                        i += 1;
-                        continue;
-                    }
+            if colons >= 3
+                && trimmed.chars().all(|c| c == ':')
+                && let Some(&top) = fence_stack.last()
+                && colons >= top
+            {
+                fence_stack.pop();
+                if fence_stack.is_empty() {
+                    i += 1;
+                    break;
                 }
+                inner_lines.push(candidate.clone());
+                i += 1;
+                continue;
             }
             inner_lines.push(candidate.clone());
             i += 1;
@@ -886,10 +885,10 @@ impl Parser {
                 if is_thematic_break_line(&candidate.text) {
                     break;
                 }
-                if let Some(last) = quote_lines.last() {
-                    if indent_prefix_len(&last.text, 4).is_some() {
-                        break;
-                    }
+                if let Some(last) = quote_lines.last()
+                    && indent_prefix_len(&last.text, 4).is_some()
+                {
+                    break;
                 }
                 quote_lines.push(Line {
                     text: candidate.text.clone(),
@@ -980,16 +979,15 @@ impl Parser {
                                 list_has_blank = true;
                                 k += 1;
                             }
-                            if k < lines.len() {
-                                if let Some(next_marker) = parse_list_marker(&lines[k].text) {
-                                    if next_marker.ordered == marker.ordered
-                                        && next_marker.marker == marker.marker
-                                    {
-                                        list_has_blank = true;
-                                        j = k;
-                                        break;
-                                    }
-                                }
+                            if k < lines.len()
+                                && let Some(next_marker) =
+                                    parse_list_marker(&lines[k].text)
+                                && next_marker.ordered == marker.ordered
+                                && next_marker.marker == marker.marker
+                            {
+                                list_has_blank = true;
+                                j = k;
+                                break;
                             }
                             break;
                         }
@@ -1282,7 +1280,7 @@ impl Parser {
                     if text_buf.is_empty() {
                         text_start = i;
                     }
-                    text_buf.extend(std::iter::repeat(b'`').take(run_len));
+                    text_buf.extend(std::iter::repeat_n(b'`', run_len));
                     i += run_len;
                     continue;
                 }
@@ -1397,9 +1395,7 @@ impl Parser {
                     let (can_open, can_close) =
                         delimiter_properties(buffer, start, end, i, run_len, b);
                     self.flush_text_buf(&mut out, offsets, &mut text_buf, &mut text_start, i);
-                    let text = std::iter::repeat(b as char)
-                        .take(run_len)
-                        .collect::<String>();
+                    let text = std::iter::repeat_n(b as char, run_len).collect::<String>();
                     let span = self.span_from_offsets(offsets, i, i + run_len);
                     out.push(Inline {
                         span,
@@ -1555,7 +1551,7 @@ impl Parser {
                 continue;
             }
             if b == b'$' {
-                let has_newline = bytes[start + 1..i].iter().any(|byte| *byte == b'\n');
+                let has_newline = bytes[start + 1..i].contains(&b'\n');
                 if has_newline {
                     let span = self.span_from_offsets(offsets, start, i + 1);
                     self.push_diag(
@@ -1889,10 +1885,10 @@ impl Parser {
         end: usize,
     ) -> Option<(Inline, usize)> {
         if start > 0 {
-            if let Some(prev) = buffer[..start].chars().next_back() {
-                if prev.is_alphanumeric() || matches!(prev, '+' | '-' | '.' | '_') {
-                    return None;
-                }
+            if let Some(prev) = buffer[..start].chars().next_back()
+                && (prev.is_alphanumeric() || matches!(prev, '+' | '-' | '.' | '_'))
+            {
+                return None;
             }
             let last_ws = buffer[..start]
                 .rfind(|ch: char| ch.is_whitespace())
@@ -1908,24 +1904,25 @@ impl Parser {
         let label_span = self.span_from_offsets(offsets, start + 1, label_end);
         let mut bracket = None;
         let mut next = label_end;
-        if label_end < end && bytes[label_end] == b'[' {
-            if let Some((close, had_newline)) = find_bracket_end(bytes, label_end + 1, end) {
-                let content_start = label_end + 1;
-                let content_end = close;
-                let (content, bracket_newline) =
-                    self.parse_bracket_inlines(buffer, offsets, content_start, content_end);
-                if had_newline || bracket_newline {
-                    let span = self.span_from_offsets(offsets, start, close + 1);
-                    self.push_diag(
-                        span,
-                        DiagnosticSeverity::Error,
-                        E_REF_BRACKET_NL,
-                        "newline in reference text",
-                    );
-                }
-                bracket = Some(content);
-                next = close + 1;
+        if label_end < end
+            && bytes[label_end] == b'['
+            && let Some((close, had_newline)) = find_bracket_end(bytes, label_end + 1, end)
+        {
+            let content_start = label_end + 1;
+            let content_end = close;
+            let (content, bracket_newline) =
+                self.parse_bracket_inlines(buffer, offsets, content_start, content_end);
+            if had_newline || bracket_newline {
+                let span = self.span_from_offsets(offsets, start, close + 1);
+                self.push_diag(
+                    span,
+                    DiagnosticSeverity::Error,
+                    E_REF_BRACKET_NL,
+                    "newline in reference text",
+                );
             }
+            bracket = Some(content);
+            next = close + 1;
         }
         let span = self.span_from_offsets(offsets, start, next);
         Some((
@@ -1954,7 +1951,7 @@ impl Parser {
         let bytes = buffer.as_bytes();
         let had_newline = bytes
             .get(start..end)
-            .map(|slice| slice.iter().any(|b| *b == b'\n'))
+            .map(|slice| slice.contains(&b'\n'))
             .unwrap_or(false);
         let inlines = self.parse_inline_range(buffer, offsets, start, end);
         (inlines, had_newline)
@@ -1973,16 +1970,14 @@ impl Parser {
     ) -> Option<usize> {
         let opener_pos = brackets.iter().rposition(|entry| entry.active)?;
         let opener = brackets.get(opener_pos)?.clone();
-        if opener.image {
-            if let Some(inactive_pos) = brackets
+        if opener.image
+            && let Some(inactive_pos) = brackets
                 .iter()
                 .rposition(|entry| !entry.active && !entry.image)
-            {
-                if inactive_pos > opener_pos {
-                    brackets.remove(inactive_pos);
-                    return None;
-                }
-            }
+            && inactive_pos > opener_pos
+        {
+            brackets.remove(inactive_pos);
+            return None;
         }
         enum ParsedLink {
             Inline {
@@ -2252,9 +2247,8 @@ impl Parser {
                 start: opener_node.span.start,
                 end: opener_node.span.start + opener_remain,
             };
-            let text = std::iter::repeat(opener.ch as char)
-                .take(opener_remain)
-                .collect::<String>();
+            let text =
+                std::iter::repeat_n(opener.ch as char, opener_remain).collect::<String>();
             replacement.push(Inline {
                 span,
                 kind: InlineKind::Text(text),
@@ -2284,9 +2278,8 @@ impl Parser {
                 start: closer_node.span.end.saturating_sub(closer_remain),
                 end: closer_node.span.end,
             };
-            let text = std::iter::repeat(closer.ch as char)
-                .take(closer_remain)
-                .collect::<String>();
+            let text =
+                std::iter::repeat_n(closer.ch as char, closer_remain).collect::<String>();
             replacement.push(Inline {
                 span,
                 kind: InlineKind::Text(text),
@@ -2673,52 +2666,49 @@ impl Parser {
                 );
                 continue;
             }
-            if allow_labels {
-                if let Some((range_part, label_part)) = entry.split_once(':') {
-                    if let Ok(line) = range_part.parse::<u32>() {
-                        if line == 0 {
-                            self.push_diag(
-                                item.value.span,
-                                DiagnosticSeverity::Error,
-                                E_ATTR_SYNTAX,
-                                "invalid line number",
-                            );
-                            continue;
-                        }
-                        if max_lines == 0 || line > max_lines {
-                            out_of_bounds = true;
-                            continue;
-                        }
-                        if !is_valid_label(label_part) {
-                            self.push_diag(
-                                item.value.span,
-                                DiagnosticSeverity::Error,
-                                E_ATTR_SYNTAX,
-                                "invalid label syntax",
-                            );
-                            continue;
-                        }
-                        ranges.push(LineRange {
-                            start: line,
-                            end: line,
-                        });
-                        labels.push(LineLabel {
-                            line,
-                            label: Label {
-                                name: label_part.to_string(),
-                                span: item.value.span,
-                            },
-                        });
-                    } else {
+            if allow_labels
+                && let Some((range_part, label_part)) = entry.split_once(':')
+            {
+                if let Ok(line) = range_part.parse::<u32>() {
+                    if line == 0 {
                         self.push_diag(
                             item.value.span,
                             DiagnosticSeverity::Error,
                             E_ATTR_SYNTAX,
-                            "invalid line range",
+                            "invalid line number",
                         );
+                        continue;
                     }
-                    continue;
+                    if max_lines == 0 || line > max_lines {
+                        out_of_bounds = true;
+                        continue;
+                    }
+                    if !is_valid_label(label_part) {
+                        self.push_diag(
+                            item.value.span,
+                            DiagnosticSeverity::Error,
+                            E_ATTR_SYNTAX,
+                            "invalid label syntax",
+                        );
+                        continue;
+                    }
+                    ranges.push(LineRange { start: line, end: line });
+                    labels.push(LineLabel {
+                        line,
+                        label: Label {
+                            name: label_part.to_string(),
+                            span: item.value.span,
+                        },
+                    });
+                } else {
+                    self.push_diag(
+                        item.value.span,
+                        DiagnosticSeverity::Error,
+                        E_ATTR_SYNTAX,
+                        "invalid line range",
+                    );
                 }
+                continue;
             }
             if let Some((start, end)) = entry.split_once('-') {
                 if let (Ok(start), Ok(end)) = (start.parse::<u32>(), end.parse::<u32>()) {
@@ -3403,10 +3393,10 @@ fn match_html_any_tag(text: &str) -> bool {
         Some(end) => end,
         None => return false,
     };
-    if let Some(tag) = parse_html_tag_name(text) {
-        if is_type1_tag_name(tag.name) {
-            return false;
-        }
+    if let Some(tag) = parse_html_tag_name(text)
+        && is_type1_tag_name(tag.name)
+    {
+        return false;
     }
     for b in &bytes[end + 1..] {
         if *b != b' ' && *b != b'\t' {
