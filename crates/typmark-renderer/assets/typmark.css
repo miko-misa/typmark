@@ -1,0 +1,272 @@
+body {
+  margin: 0;
+  padding: 1.5rem;
+  font-family: var(--typmark-font, "Noto Sans", "Segoe UI", sans-serif);
+  line-height: 1.7;
+  color: var(--typmark-fg);
+  background: var(--typmark-bg);
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+section {
+  margin: 2rem 0;
+}
+
+section + section {
+  margin-top: 1rem;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  margin: 1.5rem 0 0.75rem;
+  letter-spacing: 0.01em;
+}
+
+p {
+  margin: 0.4rem 0;
+  line-height: 1.6;
+}
+
+p + p {
+  margin-top: 1.2em;
+}
+
+h1 + section > h1,
+h1 + section > h2,
+h2 + section > h3,
+h3 + section > h4,
+h4 + section > h5,
+h5 + section > h6 {
+  margin-top: 0rem;
+}
+
+h1 + section,
+h1 + section,
+h2 + section,
+h3 + section,
+h4 + section,
+h5 + section {
+  margin-top: 0rem;
+}
+
+a {
+  color: var(--typmark-accent);
+}
+
+a.TypMark-ref.ref-unresolved {
+  color: #b91c1c;
+  text-decoration-style: dashed;
+}
+
+ul {
+  padding-inline-start: 20px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+}
+
+th,
+td {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--typmark-border);
+}
+
+thead th {
+  background: rgba(31, 35, 40, 0.8);
+  text-align: center;
+}
+
+code {
+  font-family: var(
+    --typmark-code-font,
+    "JetBrains Mono",
+    "Consolas",
+    monospace
+  );
+  background: var(--typmark-code-bg);
+  color: var(--typmark-code-fg);
+  padding: 0.1em 0.3em;
+  border-radius: 4px;
+  border: 1px solid rgba(31, 35, 40, 0.8);
+}
+
+pre {
+  background: var(--typmark-code-bg);
+  padding: 1rem;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+figure.TypMark-codeblock {
+  margin: 1rem 0;
+  border: 1px solid var(--typmark-border);
+  border-radius: 8px;
+  background: var(--typmark-code-bg);
+  position: relative;
+}
+
+figure.TypMark-codeblock[data-lang]:not([data-lang=""])::after {
+  content: attr(data-lang);
+  position: absolute;
+  top: 0rem;
+  right: 0rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  color: var(--typmark-muted);
+  background: var(--typmark-border);
+  padding: 0.2rem 0.6rem;
+  border-radius: 0px 6px;
+  font-family: var(
+    --typmark-code-font,
+    "JetBrains Mono",
+    "Consolas",
+    monospace
+  );
+}
+
+figure.TypMark-codeblock .TypMark-pre {
+  margin: 0;
+  padding: 0.75rem;
+  overflow-x: auto;
+}
+
+figure.TypMark-codeblock code {
+  background: transparent;
+  padding: 0;
+  line-height: 1.4;
+  border: none;
+  color: var(--typmark-code-fg);
+}
+
+figure.TypMark-codeblock .line {
+  display: block;
+  white-space: pre;
+  position: relative;
+  padding-left: 2rem;
+  line-height: 1.4;
+  min-height: 1.4em;
+}
+
+figure.TypMark-codeblock .line:empty::after {
+  content: " ";
+}
+
+figure.TypMark-codeblock .line::before {
+  content: attr(data-line);
+  position: absolute;
+  left: 0;
+  width: 1.4rem;
+  text-align: right;
+  color: var(--typmark-muted);
+  user-select: none;
+}
+
+figure.TypMark-codeblock .line.highlighted {
+  background: rgba(255, 214, 102, 0.35);
+}
+
+figure.TypMark-codeblock .line.diff.add {
+  background: rgba(16, 185, 129, 0.2);
+}
+
+figure.TypMark-codeblock .line.diff.del {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+.TypMark-box {
+  border: 1px solid var(--typmark-box-border);
+  border-radius: 8px;
+  background: var(--typmark-box-bg);
+  padding: 0;
+  margin: 1rem 0;
+}
+
+.TypMark-box-title {
+  padding: 0.6rem;
+  border-bottom: 1px solid var(--typmark-box-border);
+  border-radius: 8px 8px 0px 0px;
+  font-weight: 600;
+}
+
+.TypMark-box-body {
+  padding: 0.6rem 0.8rem;
+  border-radius: 0px 0px 8px 8px;
+}
+
+blockquote {
+  margin: 1rem 0;
+  padding: 0.1rem 1rem;
+  border-left: 4px solid var(--typmark-border);
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.TypMark-math-block {
+  overflow-x: auto;
+  padding: 0.5rem 0;
+}
+
+.TypMark-math-inline {
+  vertical-align: middle;
+}
+
+.TypMark-math-block .typst-doc {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.typst-doc {
+  display: inline-block;
+  color: var(--typmark-fg);
+}
+
+.typst-doc .typst-shape {
+  fill: currentColor;
+}
+
+.typst-doc use,
+.typst-doc .typst-text {
+  fill: currentColor;
+}
+
+.typst-doc .typst-shape[stroke]:not([stroke="none"]) {
+  stroke: currentColor;
+}
+
+.typst-doc .typst-shape[fill="#ffffff"],
+.typst-doc .typst-shape[fill="#fff"],
+.typst-doc .typst-shape[fill="white"] {
+  fill: transparent;
+}
+
+ul.task-list {
+  list-style: none;
+  padding-left: 1.5rem;
+}
+
+li.task-list-item {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.TypMark-ref-target {
+  outline: 2px solid var(--typmark-accent);
+  outline-offset: 4px;
+  border-radius: 6px;
+}
+
+input[type="checkbox"][disabled] {
+  accent-color: var(--typmark-accent);
+}
