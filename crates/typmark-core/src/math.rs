@@ -209,10 +209,7 @@ pub fn render_math(source: &str, display: bool) -> Result<String, String> {
                 let warned = typst::compile::<PagedDocument>(&world);
                 if let Err(errors) = warned.output {
                     for error in errors {
-                        eprintln!(
-                            "typst math error: {:?}: {}",
-                            error.severity, error.message
-                        );
+                        eprintln!("typst math error: {:?}: {}", error.severity, error.message);
                     }
                 }
             }
