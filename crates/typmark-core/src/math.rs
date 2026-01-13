@@ -192,7 +192,7 @@ pub fn render_math(source: &str, display: bool) -> Result<String, String> {
             if doc.pages.is_empty() {
                 None
             } else {
-                Some(typst_svg::svg(&doc.pages[0]))
+                Some(normalize_svg_ids(&typst_svg::svg(&doc.pages[0])))
             }
         })
     };
@@ -216,4 +216,44 @@ pub fn render_math(source: &str, display: bool) -> Result<String, String> {
             Err(source.to_string())
         }
     }
+}
+
+fn normalize_svg_ids(svg: &str) -> String {
+    let mut ids = Vec::new();
+    let mut search = 0;
+    while let Some(symbol_pos) = svg[search..].find("<symbol") {
+        let symbol_start = search + symbol_pos;
+        let id_attr_pos = match svg[symbol_start..].find("id=\"") {
+            Some(pos) => symbol_start + pos + 4,
+            None => {
+                search = symbol_start + 7;
+                continue;
+            }
+        };
+        let id_end = match svg[id_attr_pos..].find('"') {
+            Some(pos) => id_attr_pos + pos,
+            None => break,
+        };
+        ids.push(svg[id_attr_pos..id_end].to_string());
+        search = id_end;
+    }
+
+    if ids.is_empty() {
+        return svg.to_string();
+    }
+
+    let mut out = svg.to_string();
+    for (index, id) in ids.iter().enumerate() {
+        let new_id = format!("g{}", index + 1);
+        out = out.replace(&format!("id=\"{}\"", id), &format!("id=\"{}\"", new_id));
+        out = out.replace(
+            &format!("xlink:href=\"#{}\"", id),
+            &format!("xlink:href=\"#{}\"", new_id),
+        );
+        out = out.replace(
+            &format!("href=\"#{}\"", id),
+            &format!("href=\"#{}\"", new_id),
+        );
+    }
+    out
 }
