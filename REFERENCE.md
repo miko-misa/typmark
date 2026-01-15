@@ -180,10 +180,10 @@ E = mc^2
 $$
 ```
 
-Output is Typst SVG. When rendering fails, the raw text is emitted with an error class.
+Inline math is wrapped in `<span class="TypMark-math-inline">` and contains a line-height guard `<span class="TypMark-math-inline-strut">` followed by Typst SVG. When rendering fails, the raw text is emitted with an error class.
 
 ## Code blocks
-Fenced code blocks use figure. Each line has data-line. This applies even when the language token is omitted.
+Fenced code blocks use figure. Each line has data-line. This applies even when the language token is omitted. Lines marked as diff deletions do not receive data-line and do not increment displayed line numbers.
 
 Input
 ````
@@ -197,7 +197,7 @@ let b = 2;
 Output
 ```
 <figure class="TypMark-codeblock" data-typmark="codeblock" id="code" data-note="keep" data-hl="2:printf" data-diff_del="3" data-lang="rs">
-  <pre class="TypMark-pre"><code class="language-rs"><span class="line" data-line="1">let a = 1;</span><span class="line highlighted" data-line="2" data-highlighted-line id="printf" data-line-label="printf">printf(&quot;hi&quot;);</span><span class="line diff del" data-line="3" data-diff="del">let b = 2;</span></code></pre>
+  <pre class="TypMark-pre"><code class="language-rs"><span class="line" data-line="1">let a = 1;</span><span class="line highlighted" data-line="2" data-highlighted-line id="printf" data-line-label="printf">printf(&quot;hi&quot;);</span><span class="line diff del" data-diff="del">let b = 2;</span></code></pre>
 </figure>
 ```
 

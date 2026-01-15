@@ -30,6 +30,44 @@ h6 {
   letter-spacing: 0.01em;
 }
 
+h1 {
+  border-bottom: 1px solid var(--typmark-border);
+  padding-bottom: 0.3rem;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  position: relative;
+}
+
+h1::before,
+h2::before,
+h3::before,
+h4::before {
+  color: var(--typmark-muted);
+  margin-right: 1rem;
+  letter-spacing: -0.2rem;
+  font: inherit;
+}
+
+h1::before {
+  content: "#";
+}
+
+h2::before {
+  content: "##";
+}
+
+h3::before {
+  content: "###";
+}
+
+h4::before {
+  content: "####";
+}
+
 p {
   margin: 0.4rem 0;
   line-height: 1.6;
@@ -153,7 +191,7 @@ figure.TypMark-codeblock .line {
   display: block;
   white-space: pre;
   position: relative;
-  padding-left: 2rem;
+  padding-left: 2.2rem;
   line-height: 1.4;
   min-height: 1.4em;
 }
@@ -163,25 +201,34 @@ figure.TypMark-codeblock .line:empty::after {
 }
 
 figure.TypMark-codeblock .line::before {
-  content: attr(data-line);
+  content: " " attr(data-line);
   position: absolute;
   left: 0;
-  width: 1.4rem;
+  width: 1.6rem;
   text-align: right;
   color: var(--typmark-muted);
   user-select: none;
 }
 
 figure.TypMark-codeblock .line.highlighted {
-  background: rgba(255, 214, 102, 0.35);
+  background: rgba(255, 214, 102, 0.2);
+}
+
+figure.TypMark-codeblock .line.diff.add::before,
+figure.TypMark-codeblock .line.diff.del::before {
+  width: calc(1.6rem - 4px);
 }
 
 figure.TypMark-codeblock .line.diff.add {
   background: rgba(16, 185, 129, 0.2);
+  border-left: solid 4px rgba(16, 185, 129, 0.9);
+  padding-left: calc(2.2rem - 4px);
 }
 
 figure.TypMark-codeblock .line.diff.del {
   background: rgba(239, 68, 68, 0.2);
+  border-left: solid 4px rgba(239, 68, 68, 0.9);
+  padding-left: calc(2.2rem - 4px);
 }
 
 .TypMark-box {
@@ -218,6 +265,15 @@ blockquote {
 
 .TypMark-math-inline {
   vertical-align: middle;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15em 0;
+}
+
+.TypMark-math-inline-strut {
+  display: inline-block;
+  width: 0;
+  height: 1.2em;
 }
 
 .TypMark-math-block .typst-doc {

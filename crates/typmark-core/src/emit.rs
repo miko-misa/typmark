@@ -733,7 +733,14 @@ fn render_inlines_with_context(
             }
             InlineKind::MathInline { typst_src } => {
                 match render_math_with_prefix(typst_src, false, math_counter) {
-                    Ok(svg) => out.push_str(&svg),
+                    Ok(svg) => {
+                        out.push_str("<span class=\"TypMark-math-inline\">");
+                        out.push_str(
+                            "<span class=\"TypMark-math-inline-strut\" aria-hidden=\"true\"></span>",
+                        );
+                        out.push_str(&svg);
+                        out.push_str("</span>");
+                    }
                     Err(source) => {
                         out.push_str("<span class=\"TypMark-math-inline--error\">");
                         out.push_str(&escape_text(&source));
