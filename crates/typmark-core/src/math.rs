@@ -152,7 +152,9 @@ pub fn render_math(source: &str, display: bool) -> Result<String, String> {
 
     // Create a Typst world for this compilation
 
-    let mut preamble = String::from("#show math.equation: set text(top-edge: \"bounds\", bottom-edge: \"bounds\")\n");
+    let mut preamble = String::from(
+        "#show math.equation: set text(top-edge: \"bounds\", bottom-edge: \"bounds\")\n",
+    );
     if display {
         preamble.push_str("#set page(width: auto, height: auto, margin: 0.5em)\n");
         preamble.push_str("#set block(spacing: 0.5em)\n");
