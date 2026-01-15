@@ -651,6 +651,7 @@ fn emit_code_block(writer: &mut HtmlWriter, data: CodeBlockRender<'_>) {
         ));
 
         let lines = split_lines_preserve(data.text);
+        let mut display_line_no = 1u32;
         for (idx, line) in lines.iter().enumerate() {
             let line_no = (idx + 1) as u32;
             let highlighted = line_in_ranges(line_no, &data.meta.hl);
@@ -675,7 +676,11 @@ fn emit_code_block(writer: &mut HtmlWriter, data: CodeBlockRender<'_>) {
                 class.push_str(" diff ");
                 class.push_str(diff_kind);
             }
-            let mut attrs = format!("class=\"{}\" data-line=\"{}\"", class, line_no);
+            let mut attrs = format!("class=\"{}\"", class);
+            if diff != Some("del") {
+                attrs.push_str(&format!(" data-line=\"{}\"", display_line_no));
+                display_line_no += 1;
+            }
             if highlighted {
                 attrs.push_str(" data-highlighted-line");
             }
