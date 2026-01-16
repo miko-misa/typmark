@@ -115,3 +115,16 @@ fn raw_outputs_fragment_html() {
     assert!(!stdout.contains("<!DOCTYPE html>"), "expected raw HTML");
     assert!(stdout.contains("<p>Paragraph.</p>"));
 }
+
+#[test]
+fn version_reports_cli_version() {
+    let output = Command::new(bin_path())
+        .args(["--version"])
+        .output()
+        .expect("run");
+
+    assert!(output.status.success(), "expected success exit code");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let version = env!("CARGO_PKG_VERSION");
+    assert_eq!(stdout.trim(), version, "expected version output");
+}

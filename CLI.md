@@ -29,7 +29,7 @@ Use simple code block output.
 Do not wrap sections with section tags.
 
 --render
-Wrap output in a full HTML document with inline CSS.
+Wrap output in a full HTML document with inline CSS. This is the default output.
 
 --render-js
 Wrap output in a full HTML document with inline CSS and JS.
@@ -40,12 +40,16 @@ Output raw HTML without renderer wrapping.
 --theme auto|light|dark
 Select the theme for rendered output. Default is dark.
 
+--version
+Print the CLI version.
+
 --help
 Print usage help.
 
 ## Output
 HTML is written to stdout.
 Diagnostics are written to stderr.
+When diagnostics are enabled, HTML is still written to stdout. Ignore stdout if you only need diagnostics.
 
 ## Exit codes
 0 when there are no error diagnostics.

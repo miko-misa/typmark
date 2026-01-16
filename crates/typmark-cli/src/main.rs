@@ -26,6 +26,10 @@ fn main() {
                 print_usage();
                 return;
             }
+            "--version" => {
+                println!("{}", env!("CARGO_PKG_VERSION"));
+                return;
+            }
             "--sanitized" => sanitized = true,
             "--simple-code" => simple_code_blocks = true,
             "--no-section-wrap" => wrap_sections = false,
@@ -137,7 +141,7 @@ fn main() {
 
 fn print_usage() {
     eprintln!(
-        "Usage: typmark-cli [--sanitized] [--simple-code] [--no-section-wrap] [--render|--render-js|--raw] [--theme auto|light|dark] [--diagnostics json|pretty] [input]"
+        "Usage: typmark-cli [--version] [--sanitized] [--simple-code] [--no-section-wrap] [--render|--render-js|--raw] [--theme auto|light|dark] [--diagnostics json|pretty] [input]"
     );
 }
 
