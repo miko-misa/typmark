@@ -9,12 +9,24 @@ Math is written in Typst syntax and rendered to SVG.
 Attributes can label and annotate blocks for styling and linking.
 
 ## Quick start
+### VS Code extension
+Use the VS Code extension for preview and diagnostics.
+The extension uses the TypMark CLI under the hood.
+
+- Repository: https://github.com/miko-misa/vscode-typmark
+- Releases: https://github.com/miko-misa/vscode-typmark/releases
+- Install the VSIX, reload VS Code, then open a .tmd file.
+- Run TypMark: Show Preview to render.
+- The extension downloads typmark-cli automatically when typmark.cliPath is empty.
+
+### CLI
 Install from GitHub Releases, then run.
-Replace `<tag>` with the release tag you downloaded.
+Replace <tag> with the release tag you downloaded.
 For Linux and macOS, use the tar.gz archive that matches your OS and CPU.
 See Install for details and PATH setup.
 
 Linux and macOS (example uses Linux x86_64)
+
 ```
 tar -xzf typmark-cli-<tag>-x86_64-unknown-linux-gnu.tar.gz
 mv typmark-cli /usr/local/bin/typmark-cli
@@ -22,9 +34,10 @@ typmark-cli input.tmd > output.html
 ```
 
 Windows PowerShell
+
 ```
 Expand-Archive -Path typmark-cli-<tag>-x86_64-pc-windows-msvc.zip -DestinationPath .
-Move-Item -Force typmark-cli.exe $env:USERPROFILE\\bin\\typmark-cli.exe
+Move-Item -Force typmark-cli.exe $env:USERPROFILE\bin\typmark-cli.exe
 typmark-cli input.tmd > output.html
 ```
 

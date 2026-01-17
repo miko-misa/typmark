@@ -9,12 +9,24 @@ TypMark は Markdown を基盤にした形式です。
 属性はブロックにラベルやメタ情報を付け、スタイルやリンクに使えます。
 
 ## クイックスタート
+### VS Code拡張
+プレビューと診断を使うなら VS Code拡張が最も簡単です。
+拡張は内部で TypMark CLI を使います。
+
+- リポジトリ: https://github.com/miko-misa/vscode-typmark
+- Releases: https://github.com/miko-misa/vscode-typmark/releases
+- VSIXを入れてVS Codeを再読み込みします。
+- .tmd を開いて TypMark: Show Preview を実行します。
+- typmark.cliPath が空なら拡張が typmark-cli を自動で取得します。
+
+### CLI
 GitHub Releases から入れて実行します。
-`<tag>` は取得したリリースのタグに置き換えてください。
+<tag> は取得したリリースのタグに置き換えてください。
 Linux と macOS は OS と CPU に合う tar.gz を使ってください。
 詳しくはインストールの項目を見てください。
 
 Linux と macOS の例 (Linux x86_64 の例)
+
 ```
 tar -xzf typmark-cli-<tag>-x86_64-unknown-linux-gnu.tar.gz
 mv typmark-cli /usr/local/bin/typmark-cli
@@ -22,9 +34,10 @@ typmark-cli input.tmd > output.html
 ```
 
 Windows PowerShell
+
 ```
 Expand-Archive -Path typmark-cli-<tag>-x86_64-pc-windows-msvc.zip -DestinationPath .
-Move-Item -Force typmark-cli.exe $env:USERPROFILE\\bin\\typmark-cli.exe
+Move-Item -Force typmark-cli.exe $env:USERPROFILE\bin\typmark-cli.exe
 typmark-cli input.tmd > output.html
 ```
 
