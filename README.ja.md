@@ -1,7 +1,6 @@
 # TypMark
 
-TypMark は拡張 Markdown のための Rust コアです。厳密な参照、Typst 数式、属性を扱います。
-このリポジトリにはライブラリと CLI が含まれます。
+TypMark は拡張 Markdown のための CLI ツールです。厳密な参照、Typst 数式、属性を扱います。
 
 ## TypMark について
 TypMark は Markdown を基盤にした形式です。
@@ -10,28 +9,29 @@ TypMark は Markdown を基盤にした形式です。
 属性はブロックにラベルやメタ情報を付け、スタイルやリンクに使えます。
 
 ## クイックスタート
-ファイルを HTML に変換します。
+GitHub Releases から入れて実行します。
+`<tag>` は取得したリリースのタグに置き換えてください。
+Linux と macOS は OS と CPU に合う tar.gz を使ってください。
+詳しくはインストールの項目を見てください。
+
+Linux と macOS の例 (Linux x86_64 の例)
 ```
-cargo run -p typmark-cli -- input.tmd > output.html
+tar -xzf typmark-cli-<tag>-x86_64-unknown-linux-gnu.tar.gz
+mv typmark-cli /usr/local/bin/typmark-cli
+typmark-cli input.tmd > output.html
 ```
 
-stdin から読み取り、HTML をファイルに保存します。
+Windows PowerShell
 ```
-cat input.tmd | cargo run -p typmark-cli -- > output.html
-```
-
-レンダラーを通さずに生の HTML を出力します。
-```
-cargo run -p typmark-cli -- --raw input.tmd > output.html
+Expand-Archive -Path typmark-cli-<tag>-x86_64-pc-windows-msvc.zip -DestinationPath .
+Move-Item -Force typmark-cli.exe $env:USERPROFILE\\bin\\typmark-cli.exe
+typmark-cli input.tmd > output.html
 ```
 
-診断を表示します。
-```
-cargo run -p typmark-cli -- --diagnostics pretty input.tmd
-```
+必要に応じて stdin や診断を使ってください。
 
 ## インストール
-TypMark CLI は GitHub Releases から入れる方法と、ソースからビルドする方法があります。
+TypMark CLI は GitHub Releases から入れます。
 
 GitHub Releases から入れる
 - GitHub Releases から自分の OS 向けの成果物を取得する
@@ -41,30 +41,14 @@ GitHub Releases から入れる
 
 Linux と macOS の例
 ```
-tar -xzf typmark-cli-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
+tar -xzf typmark-cli-<tag>-x86_64-unknown-linux-gnu.tar.gz
 mv typmark-cli /usr/local/bin/typmark-cli
 ```
 
 Windows PowerShell の例
 ```
-Expand-Archive -Path typmark-cli-v0.1.0-x86_64-pc-windows-msvc.zip -DestinationPath .
+Expand-Archive -Path typmark-cli-<tag>-x86_64-pc-windows-msvc.zip -DestinationPath .
 Move-Item -Force typmark-cli.exe $env:USERPROFILE\\bin\\typmark-cli.exe
-```
-
-ソースからビルドする
-このリポジトリからビルドします。
-
-必要なもの
-- Rust toolchain
-
-ビルド
-```
-cargo build -p typmark-cli
-```
-
-実行
-```
-./target/debug/typmark-cli --diagnostics pretty input.tmd
 ```
 
 ## 使い方
@@ -82,11 +66,7 @@ CLI リファレンス
 - REFERENCE.md
 
 ## リリース
-TypMark CLI のバイナリはタグからリリースします。
-`v0.1.0` のようなタグを push すると GitHub Actions が各環境向けにビルドして GitHub Releases に添付します。
-
-リリース用 workflow
-- `.github/workflows/release.yml`
+TypMark CLI のバイナリは GitHub Releases から入手できます。
 
 成果物
 - `typmark-cli-<tag>-x86_64-unknown-linux-gnu.tar.gz`
@@ -94,7 +74,10 @@ TypMark CLI のバイナリはタグからリリースします。
 - `typmark-cli-<tag>-x86_64-apple-darwin.tar.gz`
 - `typmark-cli-<tag>-aarch64-apple-darwin.tar.gz`
 
-## Workspace
-- crates/typmark-core: 解析、解決、HTML 出力の中核
-- crates/typmark-cli: CLI
-- crates/typmark-renderer: HTML ラップとアセット
+OS 別の成果物
+| OS | CPU | 成果物 |
+| --- | --- | --- |
+| Linux | x86_64 | `typmark-cli-<tag>-x86_64-unknown-linux-gnu.tar.gz` |
+| Windows | x86_64 | `typmark-cli-<tag>-x86_64-pc-windows-msvc.zip` |
+| macOS | x86_64 | `typmark-cli-<tag>-x86_64-apple-darwin.tar.gz` |
+| macOS | arm64 | `typmark-cli-<tag>-aarch64-apple-darwin.tar.gz` |

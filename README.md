@@ -1,7 +1,6 @@
 # TypMark
 
-TypMark is a Rust core for an extended Markdown format with strict references, Typst math, and attributes.
-This repository ships a library and a CLI.
+TypMark is a CLI tool for an extended Markdown format with strict references, Typst math, and attributes.
 
 ## About TypMark
 TypMark is a Markdown based format with three core features.
@@ -10,28 +9,29 @@ Math is written in Typst syntax and rendered to SVG.
 Attributes can label and annotate blocks for styling and linking.
 
 ## Quick start
-Render a file to HTML.
+Install from GitHub Releases, then run.
+Replace `<tag>` with the release tag you downloaded.
+For Linux and macOS, use the tar.gz archive that matches your OS and CPU.
+See Install for details and PATH setup.
+
+Linux and macOS (example uses Linux x86_64)
 ```
-cargo run -p typmark-cli -- input.tmd > output.html
+tar -xzf typmark-cli-<tag>-x86_64-unknown-linux-gnu.tar.gz
+mv typmark-cli /usr/local/bin/typmark-cli
+typmark-cli input.tmd > output.html
 ```
 
-Read from stdin and write HTML to a file.
+Windows PowerShell
 ```
-cat input.tmd | cargo run -p typmark-cli -- > output.html
-```
-
-Output raw HTML without renderer wrapping.
-```
-cargo run -p typmark-cli -- --raw input.tmd > output.html
+Expand-Archive -Path typmark-cli-<tag>-x86_64-pc-windows-msvc.zip -DestinationPath .
+Move-Item -Force typmark-cli.exe $env:USERPROFILE\\bin\\typmark-cli.exe
+typmark-cli input.tmd > output.html
 ```
 
-Show diagnostics.
-```
-cargo run -p typmark-cli -- --diagnostics pretty input.tmd
-```
+Then use stdin or diagnostics as needed.
 
 ## Install
-TypMark CLI can be installed from GitHub Releases or built from source.
+TypMark CLI can be installed from GitHub Releases.
 
 Install from GitHub Releases
 - Download the latest release asset for your OS from GitHub Releases
@@ -41,30 +41,14 @@ Install from GitHub Releases
 
 Example for Linux and macOS
 ```
-tar -xzf typmark-cli-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
+tar -xzf typmark-cli-<tag>-x86_64-unknown-linux-gnu.tar.gz
 mv typmark-cli /usr/local/bin/typmark-cli
 ```
 
 Example for Windows PowerShell
 ```
-Expand-Archive -Path typmark-cli-v0.1.0-x86_64-pc-windows-msvc.zip -DestinationPath .
+Expand-Archive -Path typmark-cli-<tag>-x86_64-pc-windows-msvc.zip -DestinationPath .
 Move-Item -Force typmark-cli.exe $env:USERPROFILE\\bin\\typmark-cli.exe
-```
-
-Build from source
-Build from source in this repository.
-
-Requirements
-- Rust toolchain
-
-Build
-```
-cargo build -p typmark-cli
-```
-
-Run
-```
-./target/debug/typmark-cli --diagnostics pretty input.tmd
 ```
 
 ## Usage
@@ -82,11 +66,7 @@ Language reference
 - REFERENCE.ja.md
 
 ## Release
-TypMark CLI binaries are released from Git tags.
-Push a tag like `v0.1.0` and GitHub Actions builds platform binaries and uploads them to GitHub Releases.
-
-Release workflow
-- `.github/workflows/release.yml`
+TypMark CLI binaries are available on GitHub Releases.
 
 Artifacts
 - `typmark-cli-<tag>-x86_64-unknown-linux-gnu.tar.gz`
@@ -94,10 +74,13 @@ Artifacts
 - `typmark-cli-<tag>-x86_64-apple-darwin.tar.gz`
 - `typmark-cli-<tag>-aarch64-apple-darwin.tar.gz`
 
-## Workspace
-- crates/typmark-core: parse, resolve, and HTML emission
-- crates/typmark-cli: CLI
-- crates/typmark-renderer: HTML wrapping and assets
+Artifacts by OS
+| OS | CPU | Artifact |
+| --- | --- | --- |
+| Linux | x86_64 | `typmark-cli-<tag>-x86_64-unknown-linux-gnu.tar.gz` |
+| Windows | x86_64 | `typmark-cli-<tag>-x86_64-pc-windows-msvc.zip` |
+| macOS | x86_64 | `typmark-cli-<tag>-x86_64-apple-darwin.tar.gz` |
+| macOS | arm64 | `typmark-cli-<tag>-aarch64-apple-darwin.tar.gz` |
 
 ## Japanese
 README in Japanese is in README.ja.md.
