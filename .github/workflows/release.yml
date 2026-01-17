@@ -37,6 +37,9 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
+
       - name: Build CLI
         run: cargo build -p typmark-cli --release --locked --target ${{ matrix.target }}
 
