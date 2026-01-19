@@ -8,6 +8,7 @@ pub struct NodeId(pub u32);
 #[derive(Clone, Debug, PartialEq)]
 pub struct Document {
     pub span: Span,
+    pub settings: Option<AttrList>,
     pub blocks: Vec<Block>,
 }
 

@@ -1,8 +1,8 @@
 use crate::ast::{
-    AttrItem, Block, BlockKind, BoxBlock, CodeBlock, CodeBlockKind, CodeMeta, Inline, InlineKind,
-    Label, LineRange, List, ResolvedRef, Table, TableAlign,
+    AttrItem, AttrList, Block, BlockKind, BoxBlock, CodeBlock, CodeBlockKind, CodeMeta, Inline,
+    InlineKind, Label, LineRange, List, ResolvedRef, Table, TableAlign,
 };
-use crate::math::{prefix_svg_ids, render_math};
+use crate::math::{MathSettings, prefix_svg_ids, render_math};
 use ammonia::Builder;
 use std::collections::{HashMap, HashSet};
 
@@ -59,8 +59,21 @@ pub fn emit_html(blocks: &[Block]) -> String {
 /// Emits raw, un-sanitized HTML from a slice of blocks with custom options.
 pub fn emit_html_with_options(blocks: &[Block], options: &HtmlEmitOptions) -> String {
     // Deterministic formatting: 2-space indentation and LF newlines.
-    let mut writer = HtmlWriter::new(options.clone());
+    let mut writer = HtmlWriter::new(options.clone(), MathSettings::default());
     for block in blocks {
+        emit_block(&mut writer, block);
+    }
+    writer.finish()
+}
+
+/// Emits raw, un-sanitized HTML from a document with custom options.
+pub fn emit_html_document_with_options(
+    document: &crate::ast::Document,
+    options: &HtmlEmitOptions,
+) -> String {
+    let math_settings = math_settings_from_attrs(document.settings.as_ref());
+    let mut writer = HtmlWriter::new(options.clone(), math_settings);
+    for block in &document.blocks {
         emit_block(&mut writer, block);
     }
     writer.finish()
@@ -75,6 +88,15 @@ pub fn emit_html_sanitized(blocks: &[Block]) -> String {
 /// Emits HTML from a slice of blocks with custom options and sanitizes it.
 pub fn emit_html_sanitized_with_options(blocks: &[Block], options: &HtmlEmitOptions) -> String {
     let raw_html = emit_html_with_options(blocks, options);
+    sanitize_html(&raw_html)
+}
+
+/// Emits HTML from a document with custom options and sanitizes it.
+pub fn emit_html_document_sanitized_with_options(
+    document: &crate::ast::Document,
+    options: &HtmlEmitOptions,
+) -> String {
+    let raw_html = emit_html_document_with_options(document, options);
     sanitize_html(&raw_html)
 }
 
@@ -213,6 +235,7 @@ struct HtmlWriter {
     indent: usize,
     options: HtmlEmitOptions,
     math_counter: usize,
+    math_settings: MathSettings,
 }
 
 #[derive(Clone, Copy)]
@@ -223,12 +246,13 @@ enum RenderContext {
 }
 
 impl HtmlWriter {
-    fn new(options: HtmlEmitOptions) -> Self {
+    fn new(options: HtmlEmitOptions, math_settings: MathSettings) -> Self {
         Self {
             out: String::new(),
             indent: 0,
             options,
             math_counter: 0,
+            math_settings,
         }
     }
 
@@ -248,6 +272,22 @@ impl HtmlWriter {
     }
 }
 
+fn math_settings_from_attrs(settings: Option<&AttrList>) -> MathSettings {
+    let mut out = MathSettings::default();
+    let Some(settings) = settings else {
+        return out;
+    };
+    for item in &settings.items {
+        match item.key.as_str() {
+            "math-inline-size" => out.inline_size = Some(item.value.raw.clone()),
+            "math-block-size" => out.block_size = Some(item.value.raw.clone()),
+            "math-font" => out.font = Some(item.value.raw.clone()),
+            _ => {}
+        }
+    }
+    out
+}
+
 fn emit_block(writer: &mut HtmlWriter, block: &Block) {
     match &block.kind {
         BlockKind::Section {
@@ -264,6 +304,7 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
                     title,
                     RenderContext::Title,
                     &mut writer.math_counter,
+                    &writer.math_settings,
                 );
                 let heading = format!("<h{}>{}</h{}>", level, title_html, level);
                 writer.line(&heading);
@@ -279,6 +320,7 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
                     title,
                     RenderContext::Title,
                     &mut writer.math_counter,
+                    &writer.math_settings,
                 );
                 writer.line(&format!("<h{}{}>{}</h{}>", level, attrs, title_html, level));
                 for child in children {
@@ -288,8 +330,12 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
         }
         BlockKind::Heading { level, title } => {
             let attrs = compose_block_attrs(block.attrs.label.as_ref(), &block.attrs.items);
-            let title_html =
-                render_inlines_with_context(title, RenderContext::Title, &mut writer.math_counter);
+            let title_html = render_inlines_with_context(
+                title,
+                RenderContext::Title,
+                &mut writer.math_counter,
+                &writer.math_settings,
+            );
             writer.line(&format!("<h{}{}>{}</h{}>", level, attrs, title_html, level));
         }
         BlockKind::Paragraph { content } => {
@@ -298,6 +344,7 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
                 content,
                 RenderContext::Normal,
                 &mut writer.math_counter,
+                &writer.math_settings,
             );
             writer.line(&format!("<p{}>{}</p>", attrs, inline_html));
         }
@@ -355,6 +402,7 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
                             content,
                             RenderContext::Normal,
                             &mut writer.math_counter,
+                            &writer.math_settings,
                         );
                         writer.out.push_str(&"  ".repeat(writer.indent));
                         writer.out.push_str("<li");
@@ -453,6 +501,7 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
                     title,
                     RenderContext::Title,
                     &mut writer.math_counter,
+                    &writer.math_settings,
                 );
                 writer.line(&format!(
                     "<div class=\"TypMark-box-title\">{}</div>",
@@ -471,7 +520,12 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
         }
         BlockKind::MathBlock { typst_src } => {
             let attrs = compose_block_attrs(block.attrs.label.as_ref(), &block.attrs.items);
-            match render_math_with_prefix(typst_src, true, &mut writer.math_counter) {
+            match render_math_with_prefix(
+                typst_src,
+                true,
+                &mut writer.math_counter,
+                &writer.math_settings,
+            ) {
                 Ok(svg) => writer.line(&format!(
                     "<div class=\"TypMark-math-block\"{}>{}</div>",
                     attrs, svg
@@ -530,6 +584,7 @@ fn emit_block_tight(writer: &mut HtmlWriter, block: &Block) -> bool {
                 content,
                 RenderContext::Normal,
                 &mut writer.math_counter,
+                &writer.math_settings,
             );
             writer.out.push_str(&"  ".repeat(writer.indent));
             writer.out.push_str(&inline);
@@ -549,6 +604,7 @@ fn emit_block_tight(writer: &mut HtmlWriter, block: &Block) -> bool {
                     title,
                     RenderContext::Title,
                     &mut writer.math_counter,
+                    &writer.math_settings,
                 );
                 let heading = format!("<h{}>{}</h{}>", level, title_html, level);
                 writer.line(&heading);
@@ -567,6 +623,7 @@ fn emit_block_tight(writer: &mut HtmlWriter, block: &Block) -> bool {
                     title,
                     RenderContext::Title,
                     &mut writer.math_counter,
+                    &writer.math_settings,
                 );
                 writer.line(&format!("<h{}{}>{}</h{}>", level, attrs, title_html, level));
                 let mut last_ended = true;
@@ -711,16 +768,18 @@ fn render_math_with_prefix(
     typst_src: &str,
     display: bool,
     math_counter: &mut usize,
+    math_settings: &MathSettings,
 ) -> Result<String, String> {
     *math_counter += 1;
     let prefix = format!("tm-m{}", *math_counter);
-    render_math(typst_src, display).map(|svg| prefix_svg_ids(&svg, &prefix))
+    render_math(typst_src, display, math_settings).map(|svg| prefix_svg_ids(&svg, &prefix))
 }
 
 fn render_inlines_with_context(
     inlines: &[Inline],
     context: RenderContext,
     math_counter: &mut usize,
+    math_settings: &MathSettings,
 ) -> String {
     let mut out = String::new();
     for inline in inlines {
@@ -732,7 +791,7 @@ fn render_inlines_with_context(
                 out.push_str("</code>");
             }
             InlineKind::MathInline { typst_src } => {
-                match render_math_with_prefix(typst_src, false, math_counter) {
+                match render_math_with_prefix(typst_src, false, math_counter, math_settings) {
                     Ok(svg) => {
                         out.push_str("<span class=\"TypMark-math-inline\">");
                         out.push_str(
@@ -761,6 +820,7 @@ fn render_inlines_with_context(
                     resolved.as_ref(),
                     context,
                     math_counter,
+                    math_settings,
                 ));
             }
             InlineKind::Emph(children) => {
@@ -769,6 +829,7 @@ fn render_inlines_with_context(
                     children,
                     context,
                     math_counter,
+                    math_settings,
                 ));
                 out.push_str("</em>");
             }
@@ -778,6 +839,7 @@ fn render_inlines_with_context(
                     children,
                     context,
                     math_counter,
+                    math_settings,
                 ));
                 out.push_str("</strong>");
             }
@@ -787,6 +849,7 @@ fn render_inlines_with_context(
                     children,
                     context,
                     math_counter,
+                    math_settings,
                 ));
                 out.push_str("</del>");
             }
@@ -809,6 +872,7 @@ fn render_inlines_with_context(
                         children,
                         context,
                         math_counter,
+                        math_settings,
                     ));
                     out.push_str("</a>");
                 }
@@ -818,6 +882,7 @@ fn render_inlines_with_context(
                         children,
                         RenderContext::ReferenceText,
                         math_counter,
+                        math_settings,
                     ));
                     out.push_str("</span>");
                 }
@@ -832,6 +897,7 @@ fn render_inlines_with_context(
                     children,
                     context,
                     math_counter,
+                    math_settings,
                 ));
                 out.push(']');
                 if meta.label_open_span.is_some() {
@@ -846,6 +912,7 @@ fn render_inlines_with_context(
                         alt,
                         RenderContext::ReferenceText,
                         math_counter,
+                        math_settings,
                     ));
                 }
                 _ => {
@@ -868,11 +935,17 @@ fn render_inlines_with_context(
                         alt,
                         RenderContext::ReferenceText,
                         math_counter,
+                        math_settings,
                     ));
                 }
                 _ => {
                     out.push_str("![");
-                    out.push_str(&render_inlines_with_context(alt, context, math_counter));
+                    out.push_str(&render_inlines_with_context(
+                        alt,
+                        context,
+                        math_counter,
+                        math_settings,
+                    ));
                     out.push(']');
                     if meta.label_open_span.is_some() {
                         out.push('[');
@@ -893,15 +966,26 @@ fn render_ref(
     resolved: Option<&ResolvedRef>,
     context: RenderContext,
     math_counter: &mut usize,
+    math_settings: &MathSettings,
 ) -> String {
     let display = if let Some(bracket) = bracket {
-        render_inlines_with_context(bracket, RenderContext::ReferenceText, math_counter)
+        render_inlines_with_context(
+            bracket,
+            RenderContext::ReferenceText,
+            math_counter,
+            math_settings,
+        )
     } else if let Some(ResolvedRef::Block {
         display: Some(text),
         ..
     }) = resolved
     {
-        render_inlines_with_context(text, RenderContext::ReferenceText, math_counter)
+        render_inlines_with_context(
+            text,
+            RenderContext::ReferenceText,
+            math_counter,
+            math_settings,
+        )
     } else {
         escape_text(&label.name)
     };
@@ -945,8 +1029,12 @@ fn task_input_html(checked: bool) -> String {
 }
 
 fn emit_paragraph_with_prefix(writer: &mut HtmlWriter, content: &[Inline], prefix: &str) {
-    let inline =
-        render_inlines_with_context(content, RenderContext::Normal, &mut writer.math_counter);
+    let inline = render_inlines_with_context(
+        content,
+        RenderContext::Normal,
+        &mut writer.math_counter,
+        &writer.math_settings,
+    );
     writer.out.push_str(&"  ".repeat(writer.indent));
     writer.out.push_str("<p>");
     writer.out.push_str(prefix);
@@ -963,8 +1051,12 @@ fn emit_table(writer: &mut HtmlWriter, table: &Table, attrs: &str) {
     writer.indent += 1;
     for (idx, cell) in table.headers.iter().enumerate() {
         let align_attr = table_align_attr(table.aligns.get(idx).copied());
-        let inline =
-            render_inlines_with_context(cell, RenderContext::Normal, &mut writer.math_counter);
+        let inline = render_inlines_with_context(
+            cell,
+            RenderContext::Normal,
+            &mut writer.math_counter,
+            &writer.math_settings,
+        );
         writer.line(&format!("<th{}>{}</th>", align_attr, inline));
     }
     writer.indent -= 1;
@@ -983,6 +1075,7 @@ fn emit_table(writer: &mut HtmlWriter, table: &Table, attrs: &str) {
                     cell,
                     RenderContext::Normal,
                     &mut writer.math_counter,
+                    &writer.math_settings,
                 );
                 writer.line(&format!("<td{}>{}</td>", align_attr, inline));
             }
@@ -1156,7 +1249,7 @@ fn id_attr(label: Option<&Label>) -> String {
 #[cfg(test)]
 mod tests {
     use super::{SVG_ALLOWED_ATTRS, SVG_ALLOWED_TAGS};
-    use crate::math::render_math;
+    use crate::math::{MathSettings, render_math};
     use std::collections::{BTreeMap, BTreeSet};
 
     fn collect_svg_tags(svg: &str) -> BTreeMap<String, BTreeSet<String>> {
@@ -1191,7 +1284,7 @@ mod tests {
         let mut observed: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         for display in [false, true] {
             for sample in samples {
-                let svg = render_math(sample, display)
+                let svg = render_math(sample, display, &MathSettings::default())
                     .unwrap_or_else(|_| panic!("math render failed for: {}", sample));
                 let tags = collect_svg_tags(&svg);
                 for (tag, attrs) in tags {

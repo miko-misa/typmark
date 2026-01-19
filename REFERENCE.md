@@ -8,6 +8,38 @@ This reference explains how TypMark input becomes HTML output.
 - Labels become id attributes
 - Extra attributes become data attributes
 
+## Document settings
+Place a settings line at the start of the document to control rendering.
+This line is an attribute list with only key=value pairs.
+It applies to the whole document and does not attach to the next block.
+
+Input
+```
+{ font-size=16px line-height=1.7 font="Noto Sans, Segoe UI, sans-serif"
+  math-inline-size=13pt math-block-size=14.5pt
+  code-font="JetBrains Mono, Consolas, monospace" code-size=1em
+  paragraph-gap=1.2em image-max-width=100% page-width=72rem }
+
+# Title
+Text.
+```
+
+Output
+The settings are applied to the document before rendering.
+
+Settings
+- font-size default 16px
+- line-height default 1.7
+- font default Noto Sans, Segoe UI, sans-serif
+- math-inline-size default 13pt
+- math-block-size default 14.5pt
+- math-font default inherit
+- code-font default JetBrains Mono, Consolas, monospace
+- code-size default 1em
+- paragraph-gap default 1.2em
+- page-width default none
+- image-max-width default 100%
+
 ## Headings and sections
 Input
 ```

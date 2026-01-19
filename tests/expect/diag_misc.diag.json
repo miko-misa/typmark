@@ -1,37 +1,5 @@
 [
   {
-    "code": "W_BOX_STYLE_INVALID",
-    "severity": "warning",
-    "range": {
-      "start": { "line": 0, "character": 5 },
-      "end": { "line": 0, "character": 9 }
-    }
-  },
-  {
-    "code": "W_BOX_STYLE_INVALID",
-    "severity": "warning",
-    "range": {
-      "start": { "line": 0, "character": 25 },
-      "end": { "line": 0, "character": 26 }
-    }
-  },
-  {
-    "code": "W_BOX_STYLE_INVALID",
-    "severity": "warning",
-    "range": {
-      "start": { "line": 0, "character": 42 },
-      "end": { "line": 0, "character": 45 }
-    }
-  },
-  {
-    "code": "W_BOX_STYLE_INVALID",
-    "severity": "warning",
-    "range": {
-      "start": { "line": 0, "character": 61 },
-      "end": { "line": 0, "character": 64 }
-    }
-  },
-  {
     "code": "E_CODE_CONFLICT",
     "severity": "error",
     "range": {

@@ -21,7 +21,8 @@ pub use diagnostic::{
     RelatedDiagnostic, W_BOX_STYLE_INVALID, W_CODE_RANGE_OOB, W_REF_MISSING,
 };
 pub use emit::{
-    HtmlEmitOptions, emit_html, emit_html_sanitized, emit_html_sanitized_with_options,
+    HtmlEmitOptions, emit_html, emit_html_document_sanitized_with_options,
+    emit_html_document_with_options, emit_html_sanitized, emit_html_sanitized_with_options,
     emit_html_with_options,
 };
 pub use parser::{ParseResult, parse};

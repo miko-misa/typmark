@@ -94,8 +94,32 @@ impl Parser {
         };
         // Phase 0: line-based block parsing with a minimal block set.
         let lines = self.lines.clone();
-        let blocks = self.parse_blocks(&lines, parse_inlines);
-        Document { span, blocks }
+        let (settings, start_index) = self.parse_document_settings(&lines);
+        let blocks = self.parse_blocks(&lines[start_index..], parse_inlines);
+        Document {
+            span,
+            settings,
+            blocks,
+        }
+    }
+
+    fn parse_document_settings(&mut self, lines: &[Line]) -> (Option<AttrList>, usize) {
+        let mut idx = 0;
+        while idx < lines.len() && lines[idx].text.trim().is_empty() {
+            idx += 1;
+        }
+        if idx >= lines.len() {
+            return (None, 0);
+        }
+        let line = &lines[idx];
+        let attrs = match self.try_parse_target_line(line) {
+            Some(attrs) => attrs,
+            None => return (None, 0),
+        };
+        if attrs.label.is_some() {
+            return (None, 0);
+        }
+        (Some(attrs), idx + 1)
     }
 
     fn parse_blocks(&mut self, lines: &[Line], parse_inlines: bool) -> Vec<Block> {

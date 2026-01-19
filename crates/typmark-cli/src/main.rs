@@ -4,8 +4,8 @@ use std::io::{self, Read};
 use std::process;
 
 use typmark_core::{
-    Diagnostic, DiagnosticSeverity, HtmlEmitOptions, emit_html_sanitized_with_options,
-    emit_html_with_options, parse, resolve,
+    AttrList, Diagnostic, DiagnosticSeverity, HtmlEmitOptions,
+    emit_html_document_sanitized_with_options, emit_html_document_with_options, parse, resolve,
 };
 use typmark_renderer::{Renderer, Theme};
 
@@ -116,13 +116,14 @@ fn main() {
     }
 
     let html = if sanitized {
-        emit_html_sanitized_with_options(&resolved.document.blocks, &options)
+        emit_html_document_sanitized_with_options(&resolved.document, &options)
     } else {
-        emit_html_with_options(&resolved.document.blocks, &options)
+        emit_html_document_with_options(&resolved.document, &options)
     };
 
     if render {
-        let renderer = Renderer::new(theme);
+        let renderer =
+            apply_renderer_settings(Renderer::new(theme), resolved.document.settings.as_ref());
         let highlighted = renderer.highlight_html(&html);
         let wrapped = renderer.embed_html(&highlighted, true, render_js);
         print!("{}", wrapped);
@@ -181,6 +182,34 @@ fn diagnostic_to_pretty(diagnostic: &Diagnostic) -> String {
         "{}:{}:{} {} {}",
         start_line, start_col, severity, diagnostic.code, diagnostic.message
     )
+}
+
+fn apply_renderer_settings(renderer: Renderer, settings: Option<&AttrList>) -> Renderer {
+    let mut renderer = renderer;
+    let Some(settings) = settings else {
+        return renderer;
+    };
+    for item in &settings.items {
+        let value = item.value.raw.trim();
+        if value.is_empty() {
+            continue;
+        }
+        match item.key.as_str() {
+            "font-size" => renderer = renderer.with_var("--typmark-font-size", value),
+            "line-height" => renderer = renderer.with_var("--typmark-line-height", value),
+            "font" => renderer = renderer.with_var("--typmark-font", value),
+            "code-font" => renderer = renderer.with_var("--typmark-code-font", value),
+            "code-size" => renderer = renderer.with_var("--typmark-code-size", value),
+            "paragraph-gap" => renderer = renderer.with_var("--typmark-paragraph-gap", value),
+            "page-width" => {
+                let normalized = if value == "auto" { "none" } else { value };
+                renderer = renderer.with_var("--typmark-page-width", normalized);
+            }
+            "image-max-width" => renderer = renderer.with_var("--typmark-image-max-width", value),
+            _ => {}
+        }
+    }
+    renderer
 }
 
 fn diagnostics_to_json(diagnostics: &[Diagnostic]) -> String {

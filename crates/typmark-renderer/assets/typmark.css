@@ -1,14 +1,16 @@
 body {
-  margin: 0;
+  margin: 0 auto;
   padding: 1.5rem;
   font-family: var(--typmark-font, "Noto Sans", "Segoe UI", sans-serif);
-  line-height: 1.7;
+  font-size: var(--typmark-font-size, 16px);
+  line-height: var(--typmark-line-height, 1.7);
   color: var(--typmark-fg);
   background: var(--typmark-bg);
+  max-width: var(--typmark-page-width, none);
 }
 
 img {
-  max-width: 100%;
+  max-width: var(--typmark-image-max-width, 100%);
   height: auto;
 }
 
@@ -70,11 +72,11 @@ h4::before {
 
 p {
   margin: 0.4rem 0;
-  line-height: 1.6;
+  line-height: var(--typmark-line-height, 1.7);
 }
 
 p + p {
-  margin-top: 1.2em;
+  margin-top: var(--typmark-paragraph-gap, 1.2em);
 }
 
 h1 + section > h1,
@@ -132,6 +134,7 @@ code {
     "Consolas",
     monospace
   );
+  font-size: var(--typmark-code-size, 1em);
   background: var(--typmark-code-bg);
   color: var(--typmark-code-fg);
   padding: 0.1em 0.3em;

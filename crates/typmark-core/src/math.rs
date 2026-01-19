@@ -132,17 +132,30 @@ fn is_font_file(path: &Path) -> bool {
     matches!(ext, "ttf" | "otf" | "ttc" | "otc")
 }
 
-type CacheKey = (String, bool); // (source, is_display_mode)
+type CacheKey = (String, bool, Option<String>, Option<String>, Option<String>); // (source, is_display_mode, inline_size, block_size, font)
 type Cache = Mutex<LruCache<CacheKey, String>>;
 
 static FONT_SLOT: Lazy<FontSlot> = Lazy::new(load_fonts);
 static TYPST_LIBRARY: Lazy<LazyHash<Library>> = Lazy::new(|| LazyHash::new(Library::default()));
 static RENDER_CACHE: Lazy<Cache> = Lazy::new(|| Mutex::new(LruCache::new(100.try_into().unwrap())));
 
+#[derive(Clone, Debug, Default)]
+pub struct MathSettings {
+    pub inline_size: Option<String>,
+    pub block_size: Option<String>,
+    pub font: Option<String>,
+}
+
 /// Renders a Typst math snippet to an SVG string.
 /// Returns Ok(svg_string) on success, or Err(raw_source) on failure.
-pub fn render_math(source: &str, display: bool) -> Result<String, String> {
-    let cache_key = (source.to_string(), display);
+pub fn render_math(source: &str, display: bool, settings: &MathSettings) -> Result<String, String> {
+    let cache_key = (
+        source.to_string(),
+        display,
+        settings.inline_size.clone(),
+        settings.block_size.clone(),
+        settings.font.clone(),
+    );
 
     // Check cache first
 
@@ -155,13 +168,18 @@ pub fn render_math(source: &str, display: bool) -> Result<String, String> {
     let mut preamble = String::from(
         "#show math.equation: set text(top-edge: \"bounds\", bottom-edge: \"bounds\")\n",
     );
+    if let Some(font) = &settings.font {
+        preamble.push_str(&format!("#set text(font: \"{}\")\n", font));
+    }
     if display {
         preamble.push_str("#set page(width: auto, height: auto, margin: 0.5em)\n");
         preamble.push_str("#set block(spacing: 0.5em)\n");
-        preamble.push_str("#set text(size: 16pt)\n");
+        let size = settings.block_size.as_deref().unwrap_or("14.5pt");
+        preamble.push_str(&format!("#set text(size: {})\n", size));
     } else {
         preamble.push_str("#set page(width: auto, height: auto, margin: (top: 0.35em, bottom: 0.35em, left: 0.2em, right: 0.2em))\n");
-        preamble.push_str("#set text(size: 13pt)\n");
+        let size = settings.inline_size.as_deref().unwrap_or("13pt");
+        preamble.push_str(&format!("#set text(size: {})\n", size));
     };
 
     let wrapped_source = format!(

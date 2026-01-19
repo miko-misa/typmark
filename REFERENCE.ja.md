@@ -8,6 +8,38 @@
 - ラベルは id 属性になる
 - 追加の属性は data で始まる属性になる
 
+## 文書設定
+文書の先頭に設定行を置くと表示を調整できる。
+設定行は key=value だけで書いた属性リストであり、次のブロックには付かない。
+文書全体に適用される。
+
+入力
+```
+{ font-size=16px line-height=1.7 font="Noto Sans, Segoe UI, sans-serif"
+  math-inline-size=13pt math-block-size=14.5pt
+  code-font="JetBrains Mono, Consolas, monospace" code-size=1em
+  paragraph-gap=1.2em image-max-width=100% page-width=72rem }
+
+# Title
+Text.
+```
+
+出力
+設定はレンダリングの前に文書へ適用される。
+
+設定項目
+- font-size 既定値 16px
+- line-height 既定値 1.7
+- font 既定値 Noto Sans, Segoe UI, sans-serif
+- math-inline-size 既定値 13pt
+- math-block-size 既定値 14.5pt
+- math-font 既定値 inherit
+- code-font 既定値 JetBrains Mono, Consolas, monospace
+- code-size 既定値 1em
+- paragraph-gap 既定値 1.2em
+- page-width 既定値 none
+- image-max-width 既定値 100%
+
 ## 見出しとセクション
 入力
 ```
