@@ -28,6 +28,12 @@ Output
 The settings are applied to the document before rendering.
 
 Settings
+
+Rendering behavior
+- Block math is centered by default.
+- When a block math formula exceeds the content width, it keeps its size and becomes horizontally scrollable.
+- Tables and blockquotes follow the same horizontal scrolling behavior when they overflow.
+
 - font-size default 16px
 - line-height default 1.7
 - font default Noto Sans, Segoe UI, sans-serif
