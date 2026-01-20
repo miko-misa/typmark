@@ -103,11 +103,11 @@ pub fn export_pdf(
         .map_err(|err| format!("failed to create temp file: {}", err))?;
     fs::write(&temp.path, wrapped).map_err(|err| format!("failed to write temp html: {}", err))?;
 
-    if let Some(parent) = output_path.parent() {
-        if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent)
-                .map_err(|err| format!("failed to create output directory: {}", err))?;
-        }
+    if let Some(parent) = output_path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("failed to create output directory: {}", err))?;
     }
 
     let backend = resolve_backend(options.backend)?;
