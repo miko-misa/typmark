@@ -3,6 +3,8 @@ use crate::ast::{
     InlineKind, Label, LineRange, List, ResolvedRef, Table, TableAlign,
 };
 use crate::math::{MathSettings, prefix_svg_ids, render_math};
+use crate::source_map::SourceMap;
+use crate::span::Span;
 use ammonia::Builder;
 use std::collections::{HashMap, HashSet};
 
@@ -79,6 +81,20 @@ pub fn emit_html_document_with_options(
     writer.finish()
 }
 
+/// Emits raw, un-sanitized HTML from a document with source map attributes.
+pub fn emit_html_document_with_options_and_source_map(
+    document: &crate::ast::Document,
+    options: &HtmlEmitOptions,
+    source_map: &SourceMap,
+) -> String {
+    let math_settings = math_settings_from_attrs(document.settings.as_ref());
+    let mut writer = HtmlWriter::new_with_source_map(options.clone(), math_settings, source_map);
+    for block in &document.blocks {
+        emit_block(&mut writer, block);
+    }
+    writer.finish()
+}
+
 /// Emits HTML from a slice of blocks and sanitizes it according to a safe allow-list.
 pub fn emit_html_sanitized(blocks: &[Block]) -> String {
     let raw_html = emit_html(blocks);
@@ -97,6 +113,16 @@ pub fn emit_html_document_sanitized_with_options(
     options: &HtmlEmitOptions,
 ) -> String {
     let raw_html = emit_html_document_with_options(document, options);
+    sanitize_html(&raw_html)
+}
+
+/// Emits HTML from a document with source map attributes and sanitizes it.
+pub fn emit_html_document_sanitized_with_options_and_source_map(
+    document: &crate::ast::Document,
+    options: &HtmlEmitOptions,
+    source_map: &SourceMap,
+) -> String {
+    let raw_html = emit_html_document_with_options_and_source_map(document, options, source_map);
     sanitize_html(&raw_html)
 }
 
@@ -236,6 +262,7 @@ struct HtmlWriter {
     options: HtmlEmitOptions,
     math_counter: usize,
     math_settings: MathSettings,
+    source_map: Option<SourceMap>,
 }
 
 #[derive(Clone, Copy)]
@@ -253,7 +280,18 @@ impl HtmlWriter {
             options,
             math_counter: 0,
             math_settings,
+            source_map: None,
         }
+    }
+
+    fn new_with_source_map(
+        options: HtmlEmitOptions,
+        math_settings: MathSettings,
+        source_map: &SourceMap,
+    ) -> Self {
+        let mut writer = Self::new(options, math_settings);
+        writer.source_map = Some(source_map.clone());
+        writer
     }
 
     fn line(&mut self, line: &str) {
@@ -297,7 +335,12 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
             children,
         } => {
             if writer.options.wrap_sections {
-                let attrs = compose_block_attrs(label.as_ref(), &block.attrs.items);
+                let attrs = compose_block_attrs_with_span(
+                    label.as_ref(),
+                    &block.attrs.items,
+                    block.span,
+                    writer.source_map.as_ref(),
+                );
                 writer.line(&format!("<section{}>", attrs));
                 writer.indent += 1;
                 let title_html = render_inlines_with_context(
@@ -305,6 +348,7 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
                     RenderContext::Title,
                     &mut writer.math_counter,
                     &writer.math_settings,
+                    writer.source_map.as_ref(),
                 );
                 let heading = format!("<h{}>{}</h{}>", level, title_html, level);
                 writer.line(&heading);
@@ -315,12 +359,18 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
                 writer.line("</section>");
             } else {
                 // CommonMark-compatible: just emit heading without wrapper
-                let attrs = compose_block_attrs(label.as_ref(), &block.attrs.items);
+                let attrs = compose_block_attrs_with_span(
+                    label.as_ref(),
+                    &block.attrs.items,
+                    block.span,
+                    writer.source_map.as_ref(),
+                );
                 let title_html = render_inlines_with_context(
                     title,
                     RenderContext::Title,
                     &mut writer.math_counter,
                     &writer.math_settings,
+                    writer.source_map.as_ref(),
                 );
                 writer.line(&format!("<h{}{}>{}</h{}>", level, attrs, title_html, level));
                 for child in children {
@@ -329,27 +379,44 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
             }
         }
         BlockKind::Heading { level, title } => {
-            let attrs = compose_block_attrs(block.attrs.label.as_ref(), &block.attrs.items);
+            let attrs = compose_block_attrs_with_span(
+                block.attrs.label.as_ref(),
+                &block.attrs.items,
+                block.span,
+                writer.source_map.as_ref(),
+            );
             let title_html = render_inlines_with_context(
                 title,
                 RenderContext::Title,
                 &mut writer.math_counter,
                 &writer.math_settings,
+                writer.source_map.as_ref(),
             );
             writer.line(&format!("<h{}{}>{}</h{}>", level, attrs, title_html, level));
         }
         BlockKind::Paragraph { content } => {
-            let attrs = compose_block_attrs(block.attrs.label.as_ref(), &block.attrs.items);
+            let attrs = compose_block_attrs_with_span(
+                block.attrs.label.as_ref(),
+                &block.attrs.items,
+                block.span,
+                writer.source_map.as_ref(),
+            );
             let inline_html = render_inlines_with_context(
                 content,
                 RenderContext::Normal,
                 &mut writer.math_counter,
                 &writer.math_settings,
+                writer.source_map.as_ref(),
             );
             writer.line(&format!("<p{}>{}</p>", attrs, inline_html));
         }
         BlockKind::BlockQuote { blocks } => {
-            let attrs = compose_block_attrs(block.attrs.label.as_ref(), &block.attrs.items);
+            let attrs = compose_block_attrs_with_span(
+                block.attrs.label.as_ref(),
+                &block.attrs.items,
+                block.span,
+                writer.source_map.as_ref(),
+            );
             writer.line(&format!("<blockquote{}>", attrs));
             writer.indent += 1;
             for child in blocks {
@@ -366,7 +433,12 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
             ..
         }) => {
             let tag = if *ordered { "ol" } else { "ul" };
-            let attrs = compose_block_attrs(block.attrs.label.as_ref(), &block.attrs.items);
+            let attrs = compose_block_attrs_with_span(
+                block.attrs.label.as_ref(),
+                &block.attrs.items,
+                block.span,
+                writer.source_map.as_ref(),
+            );
             let start_attr = if *ordered {
                 start
                     .filter(|&value| value != 1) // Omit start="1" (default value)
@@ -390,8 +462,9 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
                 } else {
                     ""
                 };
+                let item_span = span_attr(item.span, writer.source_map.as_ref());
                 if item.blocks.is_empty() {
-                    writer.line(&format!("<li{}></li>", task_class));
+                    writer.line(&format!("<li{}{}></li>", task_class, item_span));
                     continue;
                 }
                 if *tight && !item.blocks.is_empty() {
@@ -403,10 +476,12 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
                             RenderContext::Normal,
                             &mut writer.math_counter,
                             &writer.math_settings,
+                            writer.source_map.as_ref(),
                         );
                         writer.out.push_str(&"  ".repeat(writer.indent));
                         writer.out.push_str("<li");
                         writer.out.push_str(task_class);
+                        writer.out.push_str(&item_span);
                         writer.out.push('>');
                         if let Some(prefix) = &task_prefix {
                             writer.out.push_str(prefix);
@@ -459,7 +534,7 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
                     }
                 } else {
                     // Loose list: render all blocks normally (paragraphs get <p> tags)
-                    writer.line(&format!("<li{}>", task_class));
+                    writer.line(&format!("<li{}{}>", task_class, item_span));
                     writer.indent += 1;
                     for (idx, child) in item.blocks.iter().enumerate() {
                         if idx == 0
@@ -479,11 +554,17 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
             writer.line(&format!("</{}>", tag));
         }
         BlockKind::Table(table) => {
-            let attrs = compose_block_attrs(block.attrs.label.as_ref(), &block.attrs.items);
+            let attrs = compose_block_attrs_with_span(
+                block.attrs.label.as_ref(),
+                &block.attrs.items,
+                block.span,
+                writer.source_map.as_ref(),
+            );
             emit_table(writer, table, &attrs);
         }
         BlockKind::Box(BoxBlock { title, blocks }) => {
             let mut attrs = "class=\"TypMark-box\" data-typmark=\"box\"".to_string();
+            attrs.push_str(&span_attr(block.span, writer.source_map.as_ref()));
             if let Some(label) = block.attrs.label.as_ref() {
                 attrs.push_str(&format!(" id=\"{}\"", escape_attr(&label.name)));
             }
@@ -502,6 +583,7 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
                     RenderContext::Title,
                     &mut writer.math_counter,
                     &writer.math_settings,
+                    writer.source_map.as_ref(),
                 );
                 writer.line(&format!(
                     "<div class=\"TypMark-box-title\">{}</div>",
@@ -519,7 +601,12 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
             writer.line("</div>");
         }
         BlockKind::MathBlock { typst_src } => {
-            let attrs = compose_block_attrs(block.attrs.label.as_ref(), &block.attrs.items);
+            let attrs = compose_block_attrs_with_span(
+                block.attrs.label.as_ref(),
+                &block.attrs.items,
+                block.span,
+                writer.source_map.as_ref(),
+            );
             match render_math_with_prefix(
                 typst_src,
                 true,
@@ -538,7 +625,12 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
             }
         }
         BlockKind::ThematicBreak => {
-            let attrs = compose_block_attrs(block.attrs.label.as_ref(), &block.attrs.items);
+            let attrs = compose_block_attrs_with_span(
+                block.attrs.label.as_ref(),
+                &block.attrs.items,
+                block.span,
+                writer.source_map.as_ref(),
+            );
             writer.line(&format!("<hr{} />", attrs));
         }
         BlockKind::CodeBlock(CodeBlock {
@@ -548,19 +640,29 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
             meta,
             text,
         }) => {
+            let attrs = compose_block_attrs_with_span(
+                block.attrs.label.as_ref(),
+                &block.attrs.items,
+                block.span,
+                writer.source_map.as_ref(),
+            );
             let data = CodeBlockRender {
+                attrs,
                 kind: *kind,
                 lang: lang.as_deref(),
                 info_items: &info_attrs.items,
                 meta,
                 text,
-                label: block.attrs.label.as_ref(),
-                items: &block.attrs.items,
             };
             emit_code_block(writer, data);
         }
         BlockKind::HtmlBlock { raw } => {
-            let attrs = compose_block_attrs(block.attrs.label.as_ref(), &block.attrs.items);
+            let attrs = compose_block_attrs_with_span(
+                block.attrs.label.as_ref(),
+                &block.attrs.items,
+                block.span,
+                writer.source_map.as_ref(),
+            );
             if attrs.is_empty() {
                 writer.line(raw);
             } else {
@@ -585,6 +687,7 @@ fn emit_block_tight(writer: &mut HtmlWriter, block: &Block) -> bool {
                 RenderContext::Normal,
                 &mut writer.math_counter,
                 &writer.math_settings,
+                writer.source_map.as_ref(),
             );
             writer.out.push_str(&"  ".repeat(writer.indent));
             writer.out.push_str(&inline);
@@ -597,7 +700,12 @@ fn emit_block_tight(writer: &mut HtmlWriter, block: &Block) -> bool {
             children,
         } => {
             if writer.options.wrap_sections {
-                let attrs = compose_block_attrs(label.as_ref(), &block.attrs.items);
+                let attrs = compose_block_attrs_with_span(
+                    label.as_ref(),
+                    &block.attrs.items,
+                    block.span,
+                    writer.source_map.as_ref(),
+                );
                 writer.line(&format!("<section{}>", attrs));
                 writer.indent += 1;
                 let title_html = render_inlines_with_context(
@@ -605,6 +713,7 @@ fn emit_block_tight(writer: &mut HtmlWriter, block: &Block) -> bool {
                     RenderContext::Title,
                     &mut writer.math_counter,
                     &writer.math_settings,
+                    writer.source_map.as_ref(),
                 );
                 let heading = format!("<h{}>{}</h{}>", level, title_html, level);
                 writer.line(&heading);
@@ -618,12 +727,18 @@ fn emit_block_tight(writer: &mut HtmlWriter, block: &Block) -> bool {
                 writer.line("</section>");
                 true
             } else {
-                let attrs = compose_block_attrs(label.as_ref(), &block.attrs.items);
+                let attrs = compose_block_attrs_with_span(
+                    label.as_ref(),
+                    &block.attrs.items,
+                    block.span,
+                    writer.source_map.as_ref(),
+                );
                 let title_html = render_inlines_with_context(
                     title,
                     RenderContext::Title,
                     &mut writer.math_counter,
                     &writer.math_settings,
+                    writer.source_map.as_ref(),
                 );
                 writer.line(&format!("<h{}{}>{}</h{}>", level, attrs, title_html, level));
                 let mut last_ended = true;
@@ -645,17 +760,16 @@ fn emit_block_tight(writer: &mut HtmlWriter, block: &Block) -> bool {
 }
 
 struct CodeBlockRender<'a> {
+    attrs: String,
     kind: CodeBlockKind,
     lang: Option<&'a str>,
     info_items: &'a [AttrItem],
     meta: &'a CodeMeta,
     text: &'a str,
-    label: Option<&'a Label>,
-    items: &'a [AttrItem],
 }
 
 fn emit_code_block(writer: &mut HtmlWriter, data: CodeBlockRender<'_>) {
-    let mut attrs = compose_block_attrs(data.label, data.items);
+    let mut attrs = data.attrs;
     attrs.push_str(&data_attrs(data.info_items));
     if writer.options.simple_code_blocks {
         // CommonMark-compatible simple output
@@ -780,20 +894,44 @@ fn render_inlines_with_context(
     context: RenderContext,
     math_counter: &mut usize,
     math_settings: &MathSettings,
+    source_map: Option<&SourceMap>,
 ) -> String {
     let mut out = String::new();
     for inline in inlines {
+        let span_attr = span_attr(inline.span, source_map);
         match &inline.kind {
-            InlineKind::Text(text) => out.push_str(&escape_text(text)),
+            InlineKind::Text(text) => {
+                if span_attr.is_empty() {
+                    out.push_str(&escape_text(text));
+                } else {
+                    out.push_str("<span");
+                    out.push_str(&span_attr);
+                    out.push('>');
+                    out.push_str(&escape_text(text));
+                    out.push_str("</span>");
+                }
+            }
             InlineKind::CodeSpan(text) => {
-                out.push_str("<code>");
+                if span_attr.is_empty() {
+                    out.push_str("<code>");
+                } else {
+                    out.push_str("<code");
+                    out.push_str(&span_attr);
+                    out.push('>');
+                }
                 out.push_str(&escape_html_code(text));
                 out.push_str("</code>");
             }
             InlineKind::MathInline { typst_src } => {
                 match render_math_with_prefix(typst_src, false, math_counter, math_settings) {
                     Ok(svg) => {
-                        out.push_str("<span class=\"TypMark-math-inline\">");
+                        if span_attr.is_empty() {
+                            out.push_str("<span class=\"TypMark-math-inline\">");
+                        } else {
+                            out.push_str("<span class=\"TypMark-math-inline\"");
+                            out.push_str(&span_attr);
+                            out.push('>');
+                        }
                         out.push_str(
                             "<span class=\"TypMark-math-inline-strut\" aria-hidden=\"true\"></span>",
                         );
@@ -801,14 +939,28 @@ fn render_inlines_with_context(
                         out.push_str("</span>");
                     }
                     Err(source) => {
-                        out.push_str("<span class=\"TypMark-math-inline--error\">");
+                        if span_attr.is_empty() {
+                            out.push_str("<span class=\"TypMark-math-inline--error\">");
+                        } else {
+                            out.push_str("<span class=\"TypMark-math-inline--error\"");
+                            out.push_str(&span_attr);
+                            out.push('>');
+                        }
                         out.push_str(&escape_text(&source));
                         out.push_str("</span>");
                     }
                 }
             }
             InlineKind::SoftBreak => out.push('\n'),
-            InlineKind::HardBreak => out.push_str("<br />\n"),
+            InlineKind::HardBreak => {
+                if span_attr.is_empty() {
+                    out.push_str("<br />\n");
+                } else {
+                    out.push_str("<br");
+                    out.push_str(&span_attr);
+                    out.push_str(" />\n");
+                }
+            }
             InlineKind::Ref {
                 label,
                 bracket,
@@ -821,35 +973,58 @@ fn render_inlines_with_context(
                     context,
                     math_counter,
                     math_settings,
+                    source_map,
+                    inline.span,
                 ));
             }
             InlineKind::Emph(children) => {
-                out.push_str("<em>");
+                if span_attr.is_empty() {
+                    out.push_str("<em>");
+                } else {
+                    out.push_str("<em");
+                    out.push_str(&span_attr);
+                    out.push('>');
+                }
                 out.push_str(&render_inlines_with_context(
                     children,
                     context,
                     math_counter,
                     math_settings,
+                    source_map,
                 ));
                 out.push_str("</em>");
             }
             InlineKind::Strong(children) => {
-                out.push_str("<strong>");
+                if span_attr.is_empty() {
+                    out.push_str("<strong>");
+                } else {
+                    out.push_str("<strong");
+                    out.push_str(&span_attr);
+                    out.push('>');
+                }
                 out.push_str(&render_inlines_with_context(
                     children,
                     context,
                     math_counter,
                     math_settings,
+                    source_map,
                 ));
                 out.push_str("</strong>");
             }
             InlineKind::Strikethrough(children) => {
-                out.push_str("<del>");
+                if span_attr.is_empty() {
+                    out.push_str("<del>");
+                } else {
+                    out.push_str("<del");
+                    out.push_str(&span_attr);
+                    out.push('>');
+                }
                 out.push_str(&render_inlines_with_context(
                     children,
                     context,
                     math_counter,
                     math_settings,
+                    source_map,
                 ));
                 out.push_str("</del>");
             }
@@ -867,22 +1042,31 @@ fn render_inlines_with_context(
                         out.push_str(&escape_attr(title));
                         out.push('"');
                     }
+                    out.push_str(&span_attr);
                     out.push('>');
                     out.push_str(&render_inlines_with_context(
                         children,
                         context,
                         math_counter,
                         math_settings,
+                        source_map,
                     ));
                     out.push_str("</a>");
                 }
                 RenderContext::ReferenceText => {
-                    out.push_str("<span class=\"TypMark-delink\">");
+                    if span_attr.is_empty() {
+                        out.push_str("<span class=\"TypMark-delink\">");
+                    } else {
+                        out.push_str("<span class=\"TypMark-delink\"");
+                        out.push_str(&span_attr);
+                        out.push('>');
+                    }
                     out.push_str(&render_inlines_with_context(
                         children,
                         RenderContext::ReferenceText,
                         math_counter,
                         math_settings,
+                        source_map,
                     ));
                     out.push_str("</span>");
                 }
@@ -892,18 +1076,40 @@ fn render_inlines_with_context(
                 children,
                 meta,
             } => {
-                out.push('[');
-                out.push_str(&render_inlines_with_context(
-                    children,
-                    context,
-                    math_counter,
-                    math_settings,
-                ));
-                out.push(']');
-                if meta.label_open_span.is_some() {
+                if span_attr.is_empty() {
                     out.push('[');
-                    out.push_str(&escape_text(label));
+                    out.push_str(&render_inlines_with_context(
+                        children,
+                        context,
+                        math_counter,
+                        math_settings,
+                        source_map,
+                    ));
                     out.push(']');
+                    if meta.label_open_span.is_some() {
+                        out.push('[');
+                        out.push_str(&escape_text(label));
+                        out.push(']');
+                    }
+                } else {
+                    out.push_str("<span");
+                    out.push_str(&span_attr);
+                    out.push('>');
+                    out.push('[');
+                    out.push_str(&render_inlines_with_context(
+                        children,
+                        context,
+                        math_counter,
+                        math_settings,
+                        source_map,
+                    ));
+                    out.push(']');
+                    if meta.label_open_span.is_some() {
+                        out.push('[');
+                        out.push_str(&escape_text(label));
+                        out.push(']');
+                    }
+                    out.push_str("</span>");
                 }
             }
             InlineKind::Image { url, title, alt } => match context {
@@ -913,6 +1119,7 @@ fn render_inlines_with_context(
                         RenderContext::ReferenceText,
                         math_counter,
                         math_settings,
+                        source_map,
                     ));
                 }
                 _ => {
@@ -926,6 +1133,7 @@ fn render_inlines_with_context(
                         out.push_str(&escape_attr(title));
                         out.push('"');
                     }
+                    out.push_str(&span_attr);
                     out.push_str(" />");
                 }
             },
@@ -936,30 +1144,64 @@ fn render_inlines_with_context(
                         RenderContext::ReferenceText,
                         math_counter,
                         math_settings,
+                        source_map,
                     ));
                 }
                 _ => {
-                    out.push_str("![");
-                    out.push_str(&render_inlines_with_context(
-                        alt,
-                        context,
-                        math_counter,
-                        math_settings,
-                    ));
-                    out.push(']');
-                    if meta.label_open_span.is_some() {
-                        out.push('[');
-                        out.push_str(&escape_text(label));
+                    if span_attr.is_empty() {
+                        out.push_str("![");
+                        out.push_str(&render_inlines_with_context(
+                            alt,
+                            context,
+                            math_counter,
+                            math_settings,
+                            source_map,
+                        ));
                         out.push(']');
+                        if meta.label_open_span.is_some() {
+                            out.push('[');
+                            out.push_str(&escape_text(label));
+                            out.push(']');
+                        }
+                    } else {
+                        out.push_str("<span");
+                        out.push_str(&span_attr);
+                        out.push('>');
+                        out.push_str("![");
+                        out.push_str(&render_inlines_with_context(
+                            alt,
+                            context,
+                            math_counter,
+                            math_settings,
+                            source_map,
+                        ));
+                        out.push(']');
+                        if meta.label_open_span.is_some() {
+                            out.push('[');
+                            out.push_str(&escape_text(label));
+                            out.push(']');
+                        }
+                        out.push_str("</span>");
                     }
                 }
             },
-            InlineKind::HtmlSpan { raw } => out.push_str(raw),
+            InlineKind::HtmlSpan { raw } => {
+                if span_attr.is_empty() {
+                    out.push_str(raw);
+                } else {
+                    out.push_str("<span");
+                    out.push_str(&span_attr);
+                    out.push('>');
+                    out.push_str(raw);
+                    out.push_str("</span>");
+                }
+            }
         }
     }
     out
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_ref(
     label: &Label,
     bracket: Option<&[Inline]>,
@@ -967,13 +1209,17 @@ fn render_ref(
     context: RenderContext,
     math_counter: &mut usize,
     math_settings: &MathSettings,
+    source_map: Option<&SourceMap>,
+    span: Span,
 ) -> String {
+    let span_attr = span_attr(span, source_map);
     let display = if let Some(bracket) = bracket {
         render_inlines_with_context(
             bracket,
             RenderContext::ReferenceText,
             math_counter,
             math_settings,
+            source_map,
         )
     } else if let Some(ResolvedRef::Block {
         display: Some(text),
@@ -985,6 +1231,7 @@ fn render_ref(
             RenderContext::ReferenceText,
             math_counter,
             math_settings,
+            source_map,
         )
     } else {
         escape_text(&label.name)
@@ -994,13 +1241,15 @@ fn render_ref(
         RenderContext::Normal | RenderContext::Title => {
             if resolved.is_some() {
                 format!(
-                    "<a class=\"TypMark-ref\" href=\"#{}\">{}</a>",
+                    "<a class=\"TypMark-ref\"{} href=\"#{}\">{}</a>",
+                    span_attr,
                     escape_attr(&label.name),
                     display
                 )
             } else {
                 format!(
-                    "<span class=\"TypMark-ref ref-unresolved\" data-ref-label=\"{}\">{}</span>",
+                    "<span class=\"TypMark-ref ref-unresolved\"{} data-ref-label=\"{}\">{}</span>",
+                    span_attr,
                     escape_attr(&label.name),
                     display
                 )
@@ -1008,10 +1257,14 @@ fn render_ref(
         }
         RenderContext::ReferenceText => {
             if resolved.is_some() {
-                format!("<span class=\"TypMark-delink\">{}</span>", display)
+                format!(
+                    "<span class=\"TypMark-delink\"{}>{}</span>",
+                    span_attr, display
+                )
             } else {
                 format!(
-                    "<span class=\"TypMark-delink ref-unresolved\" data-ref-label=\"{}\">{}</span>",
+                    "<span class=\"TypMark-delink ref-unresolved\"{} data-ref-label=\"{}\">{}</span>",
+                    span_attr,
                     escape_attr(&label.name),
                     display
                 )
@@ -1034,6 +1287,7 @@ fn emit_paragraph_with_prefix(writer: &mut HtmlWriter, content: &[Inline], prefi
         RenderContext::Normal,
         &mut writer.math_counter,
         &writer.math_settings,
+        writer.source_map.as_ref(),
     );
     writer.out.push_str(&"  ".repeat(writer.indent));
     writer.out.push_str("<p>");
@@ -1056,6 +1310,7 @@ fn emit_table(writer: &mut HtmlWriter, table: &Table, attrs: &str) {
             RenderContext::Normal,
             &mut writer.math_counter,
             &writer.math_settings,
+            writer.source_map.as_ref(),
         );
         writer.line(&format!("<th{}>{}</th>", align_attr, inline));
     }
@@ -1076,6 +1331,7 @@ fn emit_table(writer: &mut HtmlWriter, table: &Table, attrs: &str) {
                     RenderContext::Normal,
                     &mut writer.math_counter,
                     &writer.math_settings,
+                    writer.source_map.as_ref(),
                 );
                 writer.line(&format!("<td{}>{}</td>", align_attr, inline));
             }
@@ -1234,8 +1490,25 @@ fn data_attrs(items: &[AttrItem]) -> String {
     out
 }
 
-fn compose_block_attrs(label: Option<&Label>, items: &[AttrItem]) -> String {
+fn span_attr(span: Span, source_map: Option<&SourceMap>) -> String {
+    let Some(source_map) = source_map else {
+        return String::new();
+    };
+    let range = source_map.range(span);
+    format!(
+        " data-tm-range=\"{}:{}-{}:{}\"",
+        range.start.line, range.start.character, range.end.line, range.end.character
+    )
+}
+
+fn compose_block_attrs_with_span(
+    label: Option<&Label>,
+    items: &[AttrItem],
+    span: Span,
+    source_map: Option<&SourceMap>,
+) -> String {
     let mut out = id_attr(label);
+    out.push_str(&span_attr(span, source_map));
     out.push_str(&data_attrs(items));
     out
 }

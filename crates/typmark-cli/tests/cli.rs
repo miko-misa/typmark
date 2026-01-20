@@ -117,6 +117,19 @@ fn raw_outputs_fragment_html() {
 }
 
 #[test]
+fn raw_outputs_source_map_when_enabled() {
+    let input = temp_file("source_map", "Alpha\n");
+    let output = Command::new(bin_path())
+        .args(["--raw", "--source-map", input.to_str().expect("path")])
+        .output()
+        .expect("run");
+
+    assert!(output.status.success(), "expected success exit code");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("data-tm-range=\""));
+}
+
+#[test]
 fn version_reports_cli_version() {
     let output = Command::new(bin_path())
         .args(["--version"])

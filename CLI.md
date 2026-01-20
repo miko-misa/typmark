@@ -25,6 +25,9 @@ Sanitize the HTML output.
 --simple-code
 Use simple code block output.
 
+--source-map
+Add data-tm-range attributes for source mapping. Ranges use zero-based line numbers and UTF-8 byte columns in the form startLine:startCol-endLine:endCol.
+
 --no-section-wrap
 Do not wrap sections with section tags.
 

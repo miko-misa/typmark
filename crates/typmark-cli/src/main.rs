@@ -5,8 +5,10 @@ use std::path::{Path, PathBuf};
 use std::process;
 
 use typmark_core::{
-    AttrList, Diagnostic, DiagnosticSeverity, HtmlEmitOptions,
-    emit_html_document_sanitized_with_options, emit_html_document_with_options, parse, resolve,
+    AttrList, Diagnostic, DiagnosticSeverity, HtmlEmitOptions, ParseResult,
+    emit_html_document_sanitized_with_options,
+    emit_html_document_sanitized_with_options_and_source_map, emit_html_document_with_options,
+    emit_html_document_with_options_and_source_map, parse, resolve,
 };
 use typmark_renderer::{PdfBackend, PdfMargin, PdfOptions, Renderer, Theme};
 
@@ -14,6 +16,7 @@ fn main() {
     let mut input: Option<String> = None;
     let mut sanitized = false;
     let mut simple_code_blocks = false;
+    let mut emit_source_map = false;
     let mut wrap_sections = true;
     let mut diagnostics_mode: Option<DiagnosticsMode> = None;
     let mut render = true;
@@ -34,6 +37,7 @@ fn main() {
             }
             "--sanitized" => sanitized = true,
             "--simple-code" => simple_code_blocks = true,
+            "--source-map" => emit_source_map = true,
             "--no-section-wrap" => wrap_sections = false,
             "--render" => render = true,
             "--render-js" => {
@@ -110,14 +114,13 @@ fn main() {
         }
     };
 
-    let parsed = parse(&source);
-    let resolved = resolve(
-        parsed.document,
-        &source,
-        &parsed.source_map,
-        parsed.diagnostics,
-        &parsed.link_defs,
-    );
+    let ParseResult {
+        document,
+        diagnostics,
+        source_map,
+        link_defs,
+    } = parse(&source);
+    let resolved = resolve(document, &source, &source_map, diagnostics, &link_defs);
 
     let options = HtmlEmitOptions {
         simple_code_blocks,
@@ -128,7 +131,21 @@ fn main() {
         emit_diagnostics(&resolved.diagnostics, mode);
     }
 
-    let html = if sanitized {
+    let html = if emit_source_map {
+        if sanitized {
+            emit_html_document_sanitized_with_options_and_source_map(
+                &resolved.document,
+                &options,
+                &source_map,
+            )
+        } else {
+            emit_html_document_with_options_and_source_map(
+                &resolved.document,
+                &options,
+                &source_map,
+            )
+        }
+    } else if sanitized {
         emit_html_document_sanitized_with_options(&resolved.document, &options)
     } else {
         emit_html_document_with_options(&resolved.document, &options)
@@ -193,7 +210,7 @@ fn main() {
 
 fn print_usage() {
     eprintln!(
-        "Usage: typmark-cli [--version] [--sanitized] [--simple-code] [--no-section-wrap] [--render|--render-js|--raw] [--pdf output.pdf] [--theme auto|light|dark] [--diagnostics json|pretty] [input]"
+        "Usage: typmark-cli [--version] [--sanitized] [--simple-code] [--source-map] [--no-section-wrap] [--render|--render-js|--raw] [--pdf output.pdf] [--theme auto|light|dark] [--diagnostics json|pretty] [input]"
     );
 }
 

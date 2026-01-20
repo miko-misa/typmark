@@ -25,6 +25,9 @@ HTML をサニタイズします。
 --simple-code
 コードブロックを簡易形式で出力します。
 
+--source-map
+HTML に data-tm-range を付与します。値は 0 から始まる行番号と UTF-8 のバイト列の列番号で、startLine:startCol-endLine:endCol の形式です。エディタのプレビュー同期向けです。
+
 --no-section-wrap
 セクションのラップを行いません。
 
