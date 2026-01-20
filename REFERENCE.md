@@ -27,13 +27,12 @@ Text.
 Output
 The settings are applied to the document before rendering.
 
-Settings
-
 Rendering behavior
 - Block math is centered by default.
 - When a block math formula exceeds the content width, it keeps its size and becomes horizontally scrollable.
 - Tables and blockquotes follow the same horizontal scrolling behavior when they overflow.
 
+Settings
 - font-size default 16px
 - line-height default 1.7
 - font default Noto Sans, Segoe UI, sans-serif
@@ -45,6 +44,18 @@ Rendering behavior
 - paragraph-gap default 1.2em
 - page-width default none
 - image-max-width default 100%
+
+PDF settings
+- pdf-page default backend default
+- pdf-margin default 1.5rem
+- pdf-scale default backend default
+- pdf-base default input directory or current directory for stdin
+- pdf-backend default auto
+- PDF settings are used only for `--pdf` and do not affect HTML output.
+- PDF export uses the renderer stylesheet and syntax highlighting.
+- PDF output always uses a dedicated light theme with a white background.
+- Install wkhtmltopdf or a chromium-based browser before using PDF export.
+- For PDF output, pdf-margin is applied as page margin.
 
 ## Headings and sections
 Input

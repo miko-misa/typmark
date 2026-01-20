@@ -7,6 +7,10 @@ use syntect::highlighting::{Theme as SyntectTheme, ThemeSet};
 use syntect::html::{IncludeBackground, styled_line_to_highlighted_html};
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 
+mod pdf;
+
+pub use pdf::{PdfBackend, PdfMargin, PdfOptions};
+
 const BASE_CSS: &str = include_str!("../assets/typmark.css");
 const BASE_JS: &str = include_str!("../assets/typmark.js");
 
@@ -64,6 +68,27 @@ impl Renderer {
     }
 
     pub fn embed_html(&self, html: &str, with_inline_css: bool, with_inline_js: bool) -> String {
+        self.embed_html_with_base_and_css(html, with_inline_css, with_inline_js, None, None)
+    }
+
+    pub fn embed_html_with_base(
+        &self,
+        html: &str,
+        with_inline_css: bool,
+        with_inline_js: bool,
+        base_url: Option<&str>,
+    ) -> String {
+        self.embed_html_with_base_and_css(html, with_inline_css, with_inline_js, base_url, None)
+    }
+
+    pub fn embed_html_with_base_and_css(
+        &self,
+        html: &str,
+        with_inline_css: bool,
+        with_inline_js: bool,
+        base_url: Option<&str>,
+        extra_css: Option<&str>,
+    ) -> String {
         let mut out = String::new();
         out.push_str("<!DOCTYPE html>\n");
         out.push_str("<html lang=\"en\">\n");
@@ -72,9 +97,18 @@ impl Renderer {
         out.push_str(
             "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n",
         );
+        if let Some(base_url) = base_url {
+            out.push_str("  <base href=\"");
+            out.push_str(&escape_html_attr(base_url));
+            out.push_str("\" />\n");
+        }
         if with_inline_css {
             out.push_str("  <style>\n");
             out.push_str(&self.stylesheet());
+            if let Some(extra_css) = extra_css {
+                out.push('\n');
+                out.push_str(extra_css);
+            }
             out.push_str("\n  </style>\n");
         }
         out.push_str("</head>\n");
@@ -91,6 +125,15 @@ impl Renderer {
         out.push_str("</body>\n");
         out.push_str("</html>\n");
         out
+    }
+
+    pub fn export_pdf(
+        &self,
+        html: &str,
+        options: &PdfOptions,
+        output_path: &Path,
+    ) -> Result<(), String> {
+        pdf::export_pdf(self, html, options, output_path)
     }
 
     pub fn generate_files(&self, out_dir: &Path) -> io::Result<()> {
@@ -171,6 +214,20 @@ fn indent_root_block(vars: &BTreeMap<String, String>) -> String {
         out.push_str(";\n");
     }
     out.push_str("  }\n");
+    out
+}
+
+fn escape_html_attr(value: &str) -> String {
+    let mut out = String::new();
+    for ch in value.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '"' => out.push_str("&quot;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            _ => out.push(ch),
+        }
+    }
     out
 }
 

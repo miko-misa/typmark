@@ -1,3 +1,8 @@
+html {
+  background: var(--typmark-bg);
+  color: var(--typmark-fg);
+}
+
 body {
   margin: 0 auto;
   padding: 1.5rem;
@@ -7,6 +12,21 @@ body {
   color: var(--typmark-fg);
   background: var(--typmark-bg);
   max-width: var(--typmark-page-width, none);
+}
+
+@media print {
+  html,
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    background: var(--typmark-bg);
+    color: var(--typmark-fg);
+  }
+
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 }
 
 img {

@@ -1,13 +1,14 @@
 use std::env;
 use std::fs;
 use std::io::{self, Read};
+use std::path::{Path, PathBuf};
 use std::process;
 
 use typmark_core::{
     AttrList, Diagnostic, DiagnosticSeverity, HtmlEmitOptions,
     emit_html_document_sanitized_with_options, emit_html_document_with_options, parse, resolve,
 };
-use typmark_renderer::{Renderer, Theme};
+use typmark_renderer::{PdfBackend, PdfMargin, PdfOptions, Renderer, Theme};
 
 fn main() {
     let mut input: Option<String> = None;
@@ -18,6 +19,7 @@ fn main() {
     let mut render = true;
     let mut render_js = false;
     let mut theme = Theme::Dark;
+    let mut pdf_output: Option<String> = None;
 
     let mut args = env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -39,6 +41,17 @@ fn main() {
                 render_js = true;
             }
             "--raw" => render = false,
+            "--pdf" => {
+                let value = match args.next() {
+                    Some(value) => value,
+                    None => {
+                        eprintln!("--pdf expects an output file path");
+                        print_usage();
+                        process::exit(2);
+                    }
+                };
+                pdf_output = Some(value);
+            }
             "--theme" => {
                 let value = args.next().unwrap_or_else(|| {
                     eprintln!("--theme expects: auto | light | dark");
@@ -80,8 +93,8 @@ fn main() {
         }
     }
 
-    let source = match input {
-        Some(path) => fs::read_to_string(&path).unwrap_or_else(|err| {
+    let source = match input.as_deref() {
+        Some(path) => fs::read_to_string(path).unwrap_or_else(|err| {
             eprintln!("failed to read {}: {}", path, err);
             process::exit(1);
         }),
@@ -121,7 +134,45 @@ fn main() {
         emit_html_document_with_options(&resolved.document, &options)
     };
 
-    if render {
+    if let Some(pdf_path) = pdf_output {
+        let input_path = input.as_deref().map(Path::new);
+        let output_path = Path::new(&pdf_path);
+        let pdf_settings = match parse_pdf_settings(resolved.document.settings.as_ref()) {
+            Ok(settings) => settings,
+            Err(err) => {
+                eprintln!("pdf settings error: {}", err);
+                process::exit(1);
+            }
+        };
+        let base_url = match resolve_pdf_base_url(&pdf_settings, input_path) {
+            Ok(base_url) => base_url,
+            Err(err) => {
+                eprintln!("pdf settings error: {}", err);
+                process::exit(1);
+            }
+        };
+        let renderer = apply_renderer_settings(
+            Renderer::new(Theme::Light),
+            resolved.document.settings.as_ref(),
+        );
+        let mut options = PdfOptions::new(pdf_settings.backend);
+        if let Some(page) = pdf_settings.page {
+            options = options.with_page(page);
+        }
+        if let Some(margin) = pdf_settings.margin {
+            options = options.with_margin(margin);
+        }
+        if let Some(scale) = pdf_settings.scale {
+            options = options.with_scale(scale);
+        }
+        if let Some(base_url) = base_url {
+            options = options.with_base_url(base_url);
+        }
+        if let Err(err) = renderer.export_pdf(&html, &options, output_path) {
+            eprintln!("pdf export failed: {}", err);
+            process::exit(1);
+        }
+    } else if render {
         let renderer =
             apply_renderer_settings(Renderer::new(theme), resolved.document.settings.as_ref());
         let highlighted = renderer.highlight_html(&html);
@@ -142,7 +193,7 @@ fn main() {
 
 fn print_usage() {
     eprintln!(
-        "Usage: typmark-cli [--version] [--sanitized] [--simple-code] [--no-section-wrap] [--render|--render-js|--raw] [--theme auto|light|dark] [--diagnostics json|pretty] [input]"
+        "Usage: typmark-cli [--version] [--sanitized] [--simple-code] [--no-section-wrap] [--render|--render-js|--raw] [--pdf output.pdf] [--theme auto|light|dark] [--diagnostics json|pretty] [input]"
     );
 }
 
@@ -210,6 +261,185 @@ fn apply_renderer_settings(renderer: Renderer, settings: Option<&AttrList>) -> R
         }
     }
     renderer
+}
+
+struct PdfSettings {
+    page: Option<String>,
+    margin: Option<PdfMargin>,
+    scale: Option<String>,
+    base: Option<String>,
+    backend: PdfBackend,
+}
+
+fn parse_pdf_settings(settings: Option<&AttrList>) -> Result<PdfSettings, String> {
+    let mut pdf = PdfSettings {
+        page: None,
+        margin: Some(PdfMargin::new("1.5rem", "1.5rem", "1.5rem", "1.5rem")),
+        scale: None,
+        base: None,
+        backend: PdfBackend::Auto,
+    };
+    let Some(settings) = settings else {
+        return Ok(pdf);
+    };
+
+    for item in &settings.items {
+        let value = item.value.raw.trim();
+        if value.is_empty() {
+            continue;
+        }
+        match item.key.as_str() {
+            "pdf-page" => pdf.page = Some(value.to_string()),
+            "pdf-margin" => {
+                pdf.margin = Some(parse_pdf_margin(value)?);
+            }
+            "pdf-scale" => {
+                parse_pdf_scale(value)?;
+                pdf.scale = Some(value.to_string());
+            }
+            "pdf-base" => pdf.base = Some(value.to_string()),
+            "pdf-backend" => {
+                pdf.backend = parse_pdf_backend(value)?;
+            }
+            _ => {}
+        }
+    }
+
+    Ok(pdf)
+}
+
+fn parse_pdf_backend(value: &str) -> Result<PdfBackend, String> {
+    match value {
+        "auto" => Ok(PdfBackend::Auto),
+        "chromium" | "chrome" => Ok(PdfBackend::Chromium),
+        "wkhtmltopdf" | "wkhtml" => Ok(PdfBackend::Wkhtmltopdf),
+        _ => Err(format!(
+            "unsupported pdf-backend: {} (expected auto|chromium|wkhtmltopdf)",
+            value
+        )),
+    }
+}
+
+fn parse_pdf_scale(value: &str) -> Result<f32, String> {
+    let scale = value
+        .parse::<f32>()
+        .map_err(|_| format!("pdf-scale must be a positive number, got {}", value))?;
+    if scale <= 0.0 {
+        return Err(format!(
+            "pdf-scale must be a positive number, got {}",
+            value
+        ));
+    }
+    Ok(scale)
+}
+
+fn parse_pdf_margin(value: &str) -> Result<PdfMargin, String> {
+    let normalized = value.replace(',', " ");
+    let parts: Vec<&str> = normalized.split_whitespace().collect();
+    let values = match parts.len() {
+        1 => (parts[0], parts[0], parts[0], parts[0]),
+        2 => (parts[0], parts[1], parts[0], parts[1]),
+        3 => (parts[0], parts[1], parts[2], parts[1]),
+        4 => (parts[0], parts[1], parts[2], parts[3]),
+        _ => {
+            return Err(format!(
+                "pdf-margin expects 1 to 4 values, got {}",
+                parts.len()
+            ));
+        }
+    };
+    Ok(PdfMargin::new(values.0, values.1, values.2, values.3))
+}
+
+fn resolve_pdf_base_url(
+    settings: &PdfSettings,
+    input_path: Option<&Path>,
+) -> Result<Option<String>, String> {
+    if let Some(base) = settings.base.as_deref() {
+        let trimmed = base.trim();
+        if trimmed.is_empty() {
+            return Ok(None);
+        }
+        if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+            return Err("pdf-base does not allow remote URLs".to_string());
+        }
+        if trimmed.starts_with("file://") {
+            let mut url = trimmed.to_string();
+            if !url.ends_with('/') {
+                url.push('/');
+            }
+            return Ok(Some(url));
+        }
+        let base_dir = resolve_pdf_base_dir(Path::new(trimmed), input_path)?;
+        return Ok(Some(path_to_file_url_dir(&base_dir)?));
+    }
+
+    let Some(default_dir) = default_pdf_base_dir(input_path)? else {
+        return Ok(None);
+    };
+    Ok(Some(path_to_file_url_dir(&default_dir)?))
+}
+
+fn resolve_pdf_base_dir(path: &Path, input_path: Option<&Path>) -> Result<PathBuf, String> {
+    if path.is_absolute() {
+        return Ok(path.to_path_buf());
+    }
+
+    let base_dir = match input_path.and_then(|input| input.parent()) {
+        Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
+        _ => env::current_dir()
+            .map_err(|err| format!("failed to resolve current directory: {}", err))?,
+    };
+    Ok(base_dir.join(path))
+}
+
+fn default_pdf_base_dir(input_path: Option<&Path>) -> Result<Option<PathBuf>, String> {
+    let from_input = input_path.and_then(|input| input.parent()).map(|dir| {
+        if dir.as_os_str().is_empty() {
+            env::current_dir().ok()
+        } else {
+            Some(dir.to_path_buf())
+        }
+    });
+    if let Some(Some(dir)) = from_input {
+        return Ok(Some(dir));
+    }
+    env::current_dir()
+        .map(Some)
+        .map_err(|err| format!("failed to resolve current directory: {}", err))
+}
+
+fn path_to_file_url(path: &Path) -> Result<String, String> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        env::current_dir()
+            .map_err(|err| format!("failed to resolve current directory: {}", err))?
+            .join(path)
+    };
+    let mut value = absolute.to_string_lossy().replace('\\', "/");
+    if !value.starts_with('/') {
+        value = format!("/{}", value);
+    }
+
+    let mut out = String::from("file://");
+    for byte in value.as_bytes() {
+        let ch = *byte as char;
+        if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | '~' | '/') {
+            out.push(ch);
+        } else {
+            out.push_str(&format!("%{:02X}", byte));
+        }
+    }
+    Ok(out)
+}
+
+fn path_to_file_url_dir(path: &Path) -> Result<String, String> {
+    let mut url = path_to_file_url(path)?;
+    if !url.ends_with('/') {
+        url.push('/');
+    }
+    Ok(url)
 }
 
 fn diagnostics_to_json(diagnostics: &[Diagnostic]) -> String {

@@ -27,13 +27,12 @@ Text.
 出力
 設定はレンダリングの前に文書へ適用される。
 
-設定項目
-
 表示の挙動
 - ブロック数式は既定で中央揃えになる。
 - ブロック数式が横幅を超える場合は縮小せず横スクロールになる。
 - 表と引用も横幅超過時は横スクロールになる。
 
+設定項目
 - font-size 既定値 16px
 - line-height 既定値 1.7
 - font 既定値 Noto Sans, Segoe UI, sans-serif
@@ -45,6 +44,18 @@ Text.
 - paragraph-gap 既定値 1.2em
 - page-width 既定値 none
 - image-max-width 既定値 100%
+
+PDF 設定
+- pdf-page 既定値 バックエンド既定値
+- pdf-margin 既定値 1.5rem
+- pdf-scale 既定値 バックエンド既定値
+- pdf-base 既定値 入力ファイルのあるディレクトリ。標準入力のときはカレントディレクトリ
+- pdf-backend 既定値 auto
+- PDF 設定は `--pdf` のときだけ参照され、HTML 出力には影響しない。
+- PDF 出力ではレンダラーのスタイルとシンタックスハイライトが適用される。
+- PDF 出力では白背景の専用ライトテーマが使われる。
+- wkhtmltopdf または Chromium 系のブラウザを事前にインストールしてください。
+- PDF 出力では pdf-margin をページのマージンとして扱う。
 
 ## 見出しとセクション
 入力
