@@ -114,6 +114,8 @@ table {
   width: 100%;
   border-collapse: collapse;
   margin: 1rem 0;
+  display: block;
+  overflow-x: auto;
 }
 
 th,
@@ -259,9 +261,12 @@ blockquote {
   padding: 0.1rem 1rem;
   border-left: 4px solid var(--typmark-border);
   background: rgba(0, 0, 0, 0.03);
+  overflow-x: auto;
 }
 
 .TypMark-math-block {
+  display: flex;
+  justify-content: flex-start;
   overflow-x: auto;
   padding: 0.5rem 0;
 }
@@ -281,8 +286,11 @@ blockquote {
 
 .TypMark-math-block .typst-doc {
   display: block;
-  max-width: 100%;
+  flex: 0 0 auto;
+  max-width: none !important;
+  width: auto;
   height: auto;
+  margin: 0 auto;
 }
 
 .typst-doc {
