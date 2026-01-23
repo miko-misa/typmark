@@ -2270,7 +2270,7 @@ checksum = "6af6ae20167a9ece4bcb41af5b80f8a1f1df981f6391189ce00fd257af04126a"
 
 [[package]]
 name = "typmark-cli"
-version = "0.2.0-beta.6"
+version = "0.3.0-beta.1"
 dependencies = [
  "typmark-core",
  "typmark-renderer",
@@ -2278,7 +2278,7 @@ dependencies = [
 
 [[package]]
 name = "typmark-core"
-version = "0.2.0-beta.6"
+version = "0.3.0-beta.1"
 dependencies = [
  "ammonia",
  "comemo 0.4.0",
@@ -2294,14 +2294,14 @@ dependencies = [
 
 [[package]]
 name = "typmark-renderer"
-version = "0.2.0-beta.6"
+version = "0.3.0-beta.1"
 dependencies = [
  "syntect",
 ]
 
 [[package]]
 name = "typmark-wasm"
-version = "0.2.0-beta.6"
+version = "0.3.0-beta.1"
 dependencies = [
  "serde",
  "serde-wasm-bindgen",
