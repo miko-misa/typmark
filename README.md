@@ -78,6 +78,18 @@ Language reference
 - REFERENCE.md
 - REFERENCE.ja.md
 
+## WASM (experimental)
+TypMark has a browser-focused WASM build for rendering.
+
+Build (local)
+```
+wasm-pack build crates/typmark-wasm --target web --out-dir pkg
+```
+
+Notes
+- PDF export is disabled in wasm builds.
+- Provide fonts via the JS API when you need custom fonts.
+
 ## Release
 TypMark CLI binaries are available on GitHub Releases.
 

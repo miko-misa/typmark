@@ -1,4 +1,3 @@
-use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use lru::LruCache;
@@ -11,16 +10,19 @@ use typst::text::{Font, FontBook};
 use typst::utils::LazyHash;
 use typst::{Library, LibraryExt, World};
 
+#[cfg(not(target_arch = "wasm32"))]
+use std::path::{Path, PathBuf};
+
 /// The state for a single Typst compilation.
-struct MathWorld<'a> {
-    library: &'a LazyHash<Library>,
+struct MathWorld {
+    library: &'static LazyHash<Library>,
     book: LazyHash<FontBook>,
-    fonts: &'a [Font],
+    fonts: Vec<Font>,
     source: Source,
     main_id: FileId,
 }
 
-impl World for MathWorld<'_> {
+impl World for MathWorld {
     fn library(&self) -> &LazyHash<Library> {
         self.library
     }
@@ -78,7 +80,9 @@ fn load_fonts() -> FontSlot {
         push_font_bytes(&mut book, &mut fonts, font_bytes);
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     let mut paths = Vec::new();
+    #[cfg(not(target_arch = "wasm32"))]
     if let Ok(value) = std::env::var("TYPMARK_FONT_PATHS") {
         let separator = if cfg!(windows) { ';' } else { ':' };
         paths.extend(
@@ -88,12 +92,14 @@ fn load_fonts() -> FontSlot {
                 .map(PathBuf::from),
         );
     }
+    #[cfg(not(target_arch = "wasm32"))]
     if paths.is_empty() {
         let default_path =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/fonts/NotoSans-Regular.ttf");
         paths.push(default_path);
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     for path in expand_font_paths(&paths) {
         if let Ok(font_bytes) = std::fs::read(&path) {
             push_font_bytes(&mut book, &mut fonts, font_bytes);
@@ -103,6 +109,7 @@ fn load_fonts() -> FontSlot {
     FontSlot { book, fonts }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn expand_font_paths(paths: &[PathBuf]) -> Vec<PathBuf> {
     let mut out = Vec::new();
     for path in paths {
@@ -125,6 +132,7 @@ fn expand_font_paths(paths: &[PathBuf]) -> Vec<PathBuf> {
     out
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn is_font_file(path: &Path) -> bool {
     let Some(ext) = path.extension().and_then(|ext| ext.to_str()) else {
         return false;
@@ -135,7 +143,7 @@ fn is_font_file(path: &Path) -> bool {
 type CacheKey = (String, bool, Option<String>, Option<String>, Option<String>); // (source, is_display_mode, inline_size, block_size, font)
 type Cache = Mutex<LruCache<CacheKey, String>>;
 
-static FONT_SLOT: Lazy<FontSlot> = Lazy::new(load_fonts);
+static FONT_SLOT: Lazy<Mutex<FontSlot>> = Lazy::new(|| Mutex::new(load_fonts()));
 static TYPST_LIBRARY: Lazy<LazyHash<Library>> = Lazy::new(|| LazyHash::new(Library::default()));
 static RENDER_CACHE: Lazy<Cache> = Lazy::new(|| Mutex::new(LruCache::new(100.try_into().unwrap())));
 
@@ -189,10 +197,15 @@ pub fn render_math(source: &str, display: bool, settings: &MathSettings) -> Resu
 
     let main_file_id = FileId::new(None, VirtualPath::new("main.typ"));
 
+    let (book, fonts) = {
+        let slot = FONT_SLOT.lock().unwrap();
+        (slot.book.clone(), slot.fonts.clone())
+    };
+
     let world = MathWorld {
         library: &TYPST_LIBRARY,
-        book: LazyHash::new(FONT_SLOT.book.clone()),
-        fonts: &FONT_SLOT.fonts,
+        book: LazyHash::new(book),
+        fonts,
         source: Source::new(main_file_id, wrapped_source),
         main_id: main_file_id,
     };
@@ -201,6 +214,7 @@ pub fn render_math(source: &str, display: bool, settings: &MathSettings) -> Resu
 
     let result = {
         let warned = typst::compile::<PagedDocument>(&world);
+        #[cfg(not(target_arch = "wasm32"))]
         if std::env::var("TYPMARK_DEBUG_MATH").is_ok() {
             for warning in &warned.warnings {
                 eprintln!(
@@ -237,6 +251,13 @@ pub fn render_math(source: &str, display: bool, settings: &MathSettings) -> Resu
             Err(source.to_string())
         }
     }
+}
+
+/// Adds a font from raw bytes to the Typst font book.
+pub fn add_font_bytes(bytes: Vec<u8>) {
+    let mut slot = FONT_SLOT.lock().unwrap();
+    let FontSlot { book, fonts } = &mut *slot;
+    push_font_bytes(book, fonts, bytes);
 }
 
 pub fn prefix_svg_ids(svg: &str, prefix: &str) -> String {

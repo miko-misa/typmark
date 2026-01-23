@@ -78,6 +78,18 @@ CLI リファレンス
 - REFERENCE.ja.md
 - REFERENCE.md
 
+## WASM (実験的)
+ブラウザ向けの WASM 版を用意しています。
+
+ビルド（ローカル）
+```
+wasm-pack build crates/typmark-wasm --target web --out-dir pkg
+```
+
+注意点
+- WASM では PDF 出力は無効です。
+- カスタムフォントが必要な場合は JS API から追加してください。
+
 ## リリース
 TypMark CLI のバイナリは GitHub Releases から入手できます。
 

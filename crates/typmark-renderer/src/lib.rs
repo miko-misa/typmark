@@ -1,14 +1,20 @@
 use std::collections::BTreeMap;
-use std::fs;
-use std::io;
-use std::path::Path;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{Theme as SyntectTheme, ThemeSet};
 use syntect::html::{IncludeBackground, styled_line_to_highlighted_html};
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 
+#[cfg(not(target_arch = "wasm32"))]
+use std::fs;
+#[cfg(not(target_arch = "wasm32"))]
+use std::io;
+#[cfg(not(target_arch = "wasm32"))]
+use std::path::Path;
+
+#[cfg(not(target_arch = "wasm32"))]
 mod pdf;
 
+#[cfg(not(target_arch = "wasm32"))]
 pub use pdf::{PdfBackend, PdfMargin, PdfOptions};
 
 const BASE_CSS: &str = include_str!("../assets/typmark.css");
@@ -127,6 +133,7 @@ impl Renderer {
         out
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn export_pdf(
         &self,
         html: &str,
@@ -136,6 +143,7 @@ impl Renderer {
         pdf::export_pdf(self, html, options, output_path)
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn generate_files(&self, out_dir: &Path) -> io::Result<()> {
         fs::create_dir_all(out_dir)?;
         fs::write(out_dir.join("typmark.css"), self.stylesheet())?;

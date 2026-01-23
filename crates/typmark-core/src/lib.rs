@@ -26,6 +26,7 @@ pub use emit::{
     emit_html_document_with_options_and_source_map, emit_html_sanitized,
     emit_html_sanitized_with_options, emit_html_with_options,
 };
+pub use math::add_font_bytes;
 pub use parser::{ParseResult, parse};
 pub use resolver::{ResolveResult, resolve};
 pub use source_map::{Position, Range, SourceMap};
