@@ -77,7 +77,11 @@ pub fn render_html_with_options(source: &str, options: JsValue) -> Result<JsValu
         .collect();
 
     let mut source_map = Vec::new();
-    collect_block_ranges(&resolved.document.blocks, &parsed.source_map, &mut source_map);
+    collect_block_ranges(
+        &resolved.document.blocks,
+        &parsed.source_map,
+        &mut source_map,
+    );
 
     let result = RenderResult {
         html,
