@@ -32,10 +32,10 @@ Add data-tm-range attributes for source mapping. Ranges use zero-based line numb
 Do not wrap sections with section tags.
 
 --render
-Wrap output in a full HTML document with inline CSS. This is the default output.
+Wrap output in a full HTML document with inline CSS and JS. This is the default output.
 
 --render-js
-Wrap output in a full HTML document with inline CSS and JS.
+Same as --render. Provided for compatibility.
 
 --raw
 Output raw HTML without renderer wrapping.

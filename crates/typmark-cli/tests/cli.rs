@@ -84,8 +84,8 @@ fn render_wraps_html_with_assets() {
     assert!(stdout.contains("<!DOCTYPE html>"), "expected HTML wrapper");
     assert!(stdout.contains("<style>"), "expected inline CSS");
     assert!(
-        !stdout.contains("<script>"),
-        "expected no inline JS by default"
+        stdout.contains("<script>"),
+        "expected inline JS by default"
     );
 }
 

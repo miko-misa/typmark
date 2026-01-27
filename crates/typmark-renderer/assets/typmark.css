@@ -289,30 +289,70 @@ blockquote {
   justify-content: flex-start;
   overflow-x: auto;
   padding: 0.5rem 0;
+  position: relative;
   --typmark-scroll-shadow: rgba(0, 0, 0, 0.18);
   --typmark-scroll-shadow: color-mix(
     in srgb,
     var(--typmark-fg) 22%,
     transparent
   );
-  background:
-    linear-gradient(to right, var(--typmark-bg) 30%, rgba(0, 0, 0, 0)) 0 0 /
-      32px 100% no-repeat,
-    linear-gradient(to left, var(--typmark-bg) 30%, rgba(0, 0, 0, 0)) 100% 0 /
-      32px 100% no-repeat,
-    radial-gradient(
-        farthest-side at 0 50%,
-        var(--typmark-scroll-shadow),
-        rgba(0, 0, 0, 0)
-      )
-      0 0 / 16px 100% no-repeat,
-    radial-gradient(
-        farthest-side at 100% 50%,
-        var(--typmark-scroll-shadow),
-        rgba(0, 0, 0, 0)
-      )
-      100% 0 / 16px 100% no-repeat;
-  background-attachment: local, local, scroll, scroll;
+}
+
+.TypMark-math-block.TypMark-math-block--scroll {
+  display: block;
+  overflow: hidden;
+  padding: 0;
+}
+
+.TypMark-math-block-scroll {
+  display: flex;
+  justify-content: flex-start;
+  overflow-x: auto;
+  padding: 0.5rem 0;
+}
+
+.TypMark-math-block::before,
+.TypMark-math-block::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 16px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 2;
+}
+
+.TypMark-math-block::before {
+  left: 0;
+  background: linear-gradient(
+    to right,
+    var(--typmark-scroll-shadow),
+    rgba(0, 0, 0, 0)
+  );
+}
+
+.TypMark-math-block::after {
+  right: 0;
+  background: linear-gradient(
+    to left,
+    var(--typmark-scroll-shadow),
+    rgba(0, 0, 0, 0)
+  );
+}
+
+.TypMark-math-block:not(.TypMark-scroll-left)::before,
+.TypMark-math-block:not(.TypMark-scroll-right)::after {
+  opacity: 0;
+}
+
+.TypMark-math-block.TypMark-scroll-left::before {
+  opacity: 1;
+}
+
+.TypMark-math-block.TypMark-scroll-right::after {
+  opacity: 1;
 }
 
 .TypMark-math-inline {
@@ -335,6 +375,8 @@ blockquote {
   width: auto;
   height: auto;
   margin: 0 auto;
+  position: relative;
+  z-index: 1;
 }
 
 .typst-doc {

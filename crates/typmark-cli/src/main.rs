@@ -20,7 +20,7 @@ fn main() {
     let mut wrap_sections = true;
     let mut diagnostics_mode: Option<DiagnosticsMode> = None;
     let mut render = true;
-    let mut render_js = false;
+    let mut render_js = true;
     let mut theme = Theme::Dark;
     let mut pdf_output: Option<String> = None;
 

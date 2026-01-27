@@ -56,10 +56,93 @@
     });
   }
 
+  function setupMathScrollShadows() {
+    var blocks = document.querySelectorAll(".TypMark-math-block");
+    if (!blocks.length) {
+      return;
+    }
+
+    function ensureScrollTarget(block) {
+      for (var i = 0; i < block.children.length; i++) {
+        var child = block.children[i];
+        if (child.classList.contains("TypMark-math-block-scroll")) {
+          return child;
+        }
+      }
+
+      var wrapper = document.createElement("div");
+      wrapper.className = "TypMark-math-block-scroll";
+      while (block.firstChild) {
+        wrapper.appendChild(block.firstChild);
+      }
+      block.appendChild(wrapper);
+      block.classList.add("TypMark-math-block--scroll");
+      return wrapper;
+    }
+
+    function updateBlock(block, scrollTarget) {
+      var maxScroll = Math.max(
+        0,
+        scrollTarget.scrollWidth - scrollTarget.clientWidth,
+      );
+      if (maxScroll <= 0.5) {
+        block.classList.remove("TypMark-scroll-left");
+        block.classList.remove("TypMark-scroll-right");
+        return;
+      }
+
+      var edgeThreshold = 0.5;
+      block.classList.toggle(
+        "TypMark-scroll-left",
+        scrollTarget.scrollLeft > edgeThreshold,
+      );
+      block.classList.toggle(
+        "TypMark-scroll-right",
+        scrollTarget.scrollLeft < maxScroll - edgeThreshold,
+      );
+    }
+
+    function watchBlock(block) {
+      var scrollTarget = ensureScrollTarget(block);
+      var rafId = 0;
+      var onScroll = function () {
+        if (rafId) return;
+        rafId = window.requestAnimationFrame(function () {
+          rafId = 0;
+          updateBlock(block, scrollTarget);
+        });
+      };
+
+      scrollTarget.addEventListener("scroll", onScroll, { passive: true });
+      updateBlock(block, scrollTarget);
+      setTimeout(function () {
+        updateBlock(block, scrollTarget);
+      }, 200);
+
+      if (typeof ResizeObserver !== "undefined") {
+        var resizeObserver = new ResizeObserver(function () {
+          updateBlock(block, scrollTarget);
+        });
+        resizeObserver.observe(block);
+        resizeObserver.observe(scrollTarget);
+      }
+    }
+
+    blocks.forEach(watchBlock);
+
+    window.addEventListener("resize", function () {
+      blocks.forEach(function (block) {
+        var scrollTarget = ensureScrollTarget(block);
+        updateBlock(block, scrollTarget);
+      });
+    });
+  }
+
   function init() {
     applyBoxAttributes();
     wireLineAnchors();
     setupRefScroll();
+    setupMathScrollShadows();
   }
 
   if (document.readyState === "loading") {
