@@ -289,6 +289,30 @@ blockquote {
   justify-content: flex-start;
   overflow-x: auto;
   padding: 0.5rem 0;
+  --typmark-scroll-shadow: rgba(0, 0, 0, 0.18);
+  --typmark-scroll-shadow: color-mix(
+    in srgb,
+    var(--typmark-fg) 22%,
+    transparent
+  );
+  background:
+    linear-gradient(to right, var(--typmark-bg) 30%, rgba(0, 0, 0, 0)) 0 0 /
+      32px 100% no-repeat,
+    linear-gradient(to left, var(--typmark-bg) 30%, rgba(0, 0, 0, 0)) 100% 0 /
+      32px 100% no-repeat,
+    radial-gradient(
+        farthest-side at 0 50%,
+        var(--typmark-scroll-shadow),
+        rgba(0, 0, 0, 0)
+      )
+      0 0 / 16px 100% no-repeat,
+    radial-gradient(
+        farthest-side at 100% 50%,
+        var(--typmark-scroll-shadow),
+        rgba(0, 0, 0, 0)
+      )
+      100% 0 / 16px 100% no-repeat;
+  background-attachment: local, local, scroll, scroll;
 }
 
 .TypMark-math-inline {
