@@ -83,10 +83,7 @@ fn render_wraps_html_with_assets() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("<!DOCTYPE html>"), "expected HTML wrapper");
     assert!(stdout.contains("<style>"), "expected inline CSS");
-    assert!(
-        stdout.contains("<script>"),
-        "expected inline JS by default"
-    );
+    assert!(stdout.contains("<script>"), "expected inline JS by default");
 }
 
 #[test]
