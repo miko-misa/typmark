@@ -8,8 +8,24 @@ on:
 permissions:
   contents: write
 
+env:
+  GH_REPO: ${{ github.repository }}
+
 jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: >-
+          gh release view "$RELEASE_TAG" ||
+          gh release create "$RELEASE_TAG" --verify-tag --draft
+          --title "$RELEASE_TAG" --generate-notes
+
   build:
+    needs: create-release
     strategy:
       fail-fast: false
       matrix:
@@ -30,65 +46,96 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1d1eb14921d9c2d8ea575663e5fe3a0b57868a05
         with:
           targets: ${{ matrix.target }}
 
-      - name: Add Rust target
-        run: rustup target add ${{ matrix.target }}
-
       - name: Build CLI
-        run: cargo build -p typmark-cli --release --locked --target ${{ matrix.target }}
+        run: >-
+          cargo build -p typmark-cli --release --locked
+          --target ${{ matrix.target }}
 
       - name: Package (tar.gz)
         if: matrix.ext == 'tar.gz'
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          TARGET: ${{ matrix.target }}
         run: |
           mkdir -p dist
-          BIN="target/${{ matrix.target }}/release/typmark-cli"
-          tar -czf "dist/typmark-cli-${{ github.ref_name }}-${{ matrix.target }}.tar.gz" -C "$(dirname "$BIN")" "$(basename "$BIN")"
+          BIN="target/$TARGET/release/typmark-cli"
+          NAME="typmark-cli-$RELEASE_TAG-"
+          OUT="dist/${NAME}${TARGET}.tar.gz"
+          tar -czf "$OUT" -C "$(dirname "$BIN")" "$(basename "$BIN")"
 
       - name: Package (zip)
         if: matrix.ext == 'zip'
         shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          TARGET: ${{ matrix.target }}
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          $bin = "target/${{ matrix.target }}/release/typmark-cli.exe"
-          $out = "dist/typmark-cli-${{ github.ref_name }}-${{ matrix.target }}.zip"
+          $bin = "target/$env:TARGET/release/typmark-cli.exe"
+          $out = "dist/typmark-cli-$env:RELEASE_TAG-"
+          $out += $env:TARGET + ".zip"
           Compress-Archive -Path $bin -DestinationPath $out
 
       - name: Upload Release Assets
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release upload "$RELEASE_TAG" dist/* --clobber
 
   build-wasm:
+    needs: create-release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1d1eb14921d9c2d8ea575663e5fe3a0b57868a05
         with:
           targets: wasm32-unknown-unknown
 
       - name: Install wasm-pack
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780
         with:
           tool: wasm-pack
 
       - name: Build WASM package
-        run: wasm-pack build crates/typmark-wasm --target web --out-dir pkg
+        run: >-
+          wasm-pack build crates/typmark-wasm --target web
+          --out-dir pkg --locked
 
       - name: Package WASM (tar.gz)
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           mkdir -p dist
-          tar -czf "dist/typmark-wasm-${{ github.ref_name }}.tar.gz" -C crates/typmark-wasm/pkg .
+          OUT="dist/typmark-wasm-$RELEASE_TAG.tar.gz"
+          tar -czf "$OUT" -C crates/typmark-wasm/pkg .
 
       - name: Upload WASM Asset
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release upload "$RELEASE_TAG" dist/* --clobber
+
+  publish-release:
+    needs: [build, build-wasm]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release edit "$RELEASE_TAG" --draft=false
