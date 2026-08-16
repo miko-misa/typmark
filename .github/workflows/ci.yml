@@ -36,6 +36,11 @@ jobs:
         if: ${{ hashFiles('**/*.rs') != '' }}
         run: cargo test --workspace --all-targets --all-features --locked
 
+      - name: renderer JavaScript tests
+        run: >-
+          node --test
+          crates/typmark-renderer/tests/typmark_svg_theme.test.cjs
+
       - name: cargo check (WASM)
         if: ${{ hashFiles('**/*.rs') != '' }}
         run: >-

@@ -135,6 +135,8 @@ fn pdf_extra_css(margin: Option<&PdfMargin>) -> String {
         ":root {{\n\
   --typmark-bg: #ffffff;\n\
   --typmark-fg: #111111;\n\
+  --typmark-svg-fg: #111111;\n\
+  --typmark-svg-bg: #ffffff;\n\
   --typmark-muted: #5f5f5f;\n\
   --typmark-border: #d6d6d6;\n\
   --typmark-accent: #1f5da8;\n\
@@ -374,5 +376,17 @@ impl TempFile {
 impl Drop for TempFile {
     fn drop(&mut self) {
         let _ = fs::remove_file(&self.path);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pdf_extra_css;
+
+    #[test]
+    fn pdf_uses_light_typst_svg_palette() {
+        let css = pdf_extra_css(None);
+        assert!(css.contains("--typmark-svg-fg: #111111"));
+        assert!(css.contains("--typmark-svg-bg: #ffffff"));
     }
 }

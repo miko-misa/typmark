@@ -163,6 +163,8 @@ fn default_theme_vars() -> (BTreeMap<String, String>, BTreeMap<String, String>) 
     let light = BTreeMap::from([
         ("--typmark-bg".to_string(), "#fbfbf8".to_string()),
         ("--typmark-fg".to_string(), "#1f2328".to_string()),
+        ("--typmark-svg-fg".to_string(), "#111418".to_string()),
+        ("--typmark-svg-bg".to_string(), "#fbfbf8".to_string()),
         ("--typmark-muted".to_string(), "#5f6b76".to_string()),
         ("--typmark-border".to_string(), "#d8dee4".to_string()),
         ("--typmark-accent".to_string(), "#2b6cb0".to_string()),
@@ -175,6 +177,8 @@ fn default_theme_vars() -> (BTreeMap<String, String>, BTreeMap<String, String>) 
     let dark = BTreeMap::from([
         ("--typmark-bg".to_string(), "#0e1116".to_string()),
         ("--typmark-fg".to_string(), "#e6edf3".to_string()),
+        ("--typmark-svg-fg".to_string(), "#f7f9fb".to_string()),
+        ("--typmark-svg-bg".to_string(), "#0e1116".to_string()),
         ("--typmark-muted".to_string(), "#9aa4af".to_string()),
         ("--typmark-border".to_string(), "#2a313b".to_string()),
         ("--typmark-accent".to_string(), "#63b3ed".to_string()),
@@ -479,10 +483,31 @@ mod tests {
     }
 
     #[test]
-    fn math_colors_do_not_override_typst_embed_paints() {
-        let css = Renderer::new(Theme::Light).stylesheet();
+    fn typst_embed_paints_are_theme_scoped() {
+        let css = Renderer::new(Theme::Dark).stylesheet();
+        assert!(css.contains("--typmark-svg-fg: #f7f9fb"));
+        assert!(css.contains("--typmark-svg-bg: #0e1116"));
         assert!(css.contains(".TypMark-math-block .typst-doc .typst-shape"));
         assert!(!css.contains("\n.typst-doc .typst-shape {"));
-        assert!(css.contains(".TypMark-typst-block .typst-text use[fill=\"#000000\"]"));
+        assert!(css.contains(
+            ".TypMark-typst-block .typst-doc:not(.TypMark-svg-themed) [fill=\"#000000\"]"
+        ));
+        assert!(!css.contains(".TypMark-typst-block .typst-text use[fill=\"#000000\"]"));
+    }
+
+    #[test]
+    fn auto_theme_exposes_both_typst_svg_palettes() {
+        let css = Renderer::new(Theme::Auto).stylesheet();
+        assert!(css.contains("--typmark-svg-fg: #111418"));
+        assert!(css.contains("@media (prefers-color-scheme: dark)"));
+        assert!(css.contains("--typmark-svg-fg: #f7f9fb"));
+    }
+
+    #[test]
+    fn renderer_embeds_typst_svg_theme_runtime() {
+        let html = Renderer::new(Theme::Dark).embed_html("<p>Hi</p>", false, true);
+        assert!(html.contains("setupTypstSvgThemes"));
+        assert!(html.contains("adaptSolidPaint"));
+        assert!(html.contains("setProperty(\"fill\", \"inherit\", \"important\")"));
     }
 }

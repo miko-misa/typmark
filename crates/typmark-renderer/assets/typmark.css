@@ -394,6 +394,8 @@ blockquote {
   flex: 0 0 auto;
   max-width: 100%;
   height: auto;
+  color: var(--typmark-svg-fg);
+  isolation: isolate;
 }
 
 .TypMark-typst-block figcaption {
@@ -438,8 +440,30 @@ blockquote {
   fill: transparent;
 }
 
-.TypMark-typst-block .typst-text use[fill="#000000"] {
-  fill: currentColor;
+.TypMark-typst-block .typst-doc:not(.TypMark-svg-themed) [fill="#000000"] {
+  fill: var(--typmark-svg-fg) !important;
+}
+
+.TypMark-typst-block .typst-doc:not(.TypMark-svg-themed) [stroke="#000000"] {
+  stroke: var(--typmark-svg-fg) !important;
+}
+
+.TypMark-typst-block
+  .typst-doc:not(.TypMark-svg-themed)
+  .typst-shape[fill="#ffffff"] {
+  fill: var(--typmark-svg-bg) !important;
+}
+
+.TypMark-typst-block
+  .typst-doc:not(.TypMark-svg-themed)
+  stop[stop-color="#000000"] {
+  stop-color: var(--typmark-svg-fg) !important;
+}
+
+.TypMark-typst-block
+  .typst-doc:not(.TypMark-svg-themed)
+  stop[stop-color="#ffffff"] {
+  stop-color: var(--typmark-svg-bg) !important;
 }
 
 ul.task-list {

@@ -256,6 +256,8 @@ See @flow.
 
 HTML では `<figure class="TypMark-typst-block" data-typmark="typst" data-render="svg">` として出力され、Typst の結果はインライン SVG として埋め込まれる。レンダリングに失敗した場合は `TypMark-typst-error` class が付き、元の Typst ソースが表示される。複数ページになった場合は `W_TYPST_MULTI_PAGE` を出し、先頭ページだけを使用する。
 
+renderer は全色を単純反転せず、低彩度の SVG paint だけを OKLab で light/dark theme に合わせる。中立色の前景と背景は `--typmark-svg-fg` と `--typmark-svg-bg` に指定した browser CSS color に追従し、有彩色の hue は維持する。`auto` mode では `prefers-color-scheme` に追従する。renderer script は信頼済みの element-local paint 宣言も設定し、外側の通常の CSS が埋め込み図を誤って塗り替えることを防ぐ。script を使わない場合と PDF には stylesheet の白黒 fallback を使用する。user/browser の forced color は無効化しない。後から追加された Typst SVG fragment も自動検出する。core/WASM の raw fragment で同じ動作を得るには renderer assets を組み合わせる必要がある。WASM API は raw HTML を返すため、信頼済み入力または host 側の sanitize が必要である。
+
 CeTZ などの Typst パッケージを使う場合、TypMark はパッケージをダウンロードしない。利用者は事前に Typst の通常の package data/cache にパッケージを入れるか、`TYPMARK_TYPST_PACKAGE_PATHS` に package root を指定する必要がある。package root は `preview/cetz/0.4.2` のような階層を含むディレクトリを指す。複数指定する場合は Unix/macOS では `:`、Windows では `;` で区切る。
 
 通常のローカルファイル読み込み、リモート URL、WASM 版での OS package cache 読み込みはサポートされない。外部読み込みを試みると `W_TYPST_EXTERNAL_ASSET` と `E_TYPST_RENDER` が出る。パッケージ内部のファイルは、そのパッケージが上記の場所から見つかる場合だけ利用できる。
