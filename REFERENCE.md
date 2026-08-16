@@ -231,6 +231,37 @@ $$
 
 Inline math is wrapped in `<span class="TypMark-math-inline">` and contains a line-height guard `<span class="TypMark-math-inline-strut">` followed by Typst SVG. When rendering fails, the raw text is emitted with an error class.
 
+## Typst embeds
+
+To embed a Typst snippet as a figure, add `render=svg` to a `typst` fenced code block. A `typst` fence without `render=svg` remains a normal code block.
+
+Input
+
+````
+```typst {scope=preamble}
+#let flow-fill = rgb("#e8f1fb")
+```
+
+{#flow}
+```typst {render=svg caption="Flow diagram"}
+#rect(width: 80pt, height: 28pt, fill: flow-fill, stroke: rgb("#1f5da8"))
+```
+
+See @flow.
+````
+
+A Typst block with `scope=preamble` is not emitted to HTML. Its source is prepended to every Typst embed in the same document, so shared `#import`, `#let`, and `#set` definitions can live there. Each embed is still compiled independently as "document preamble + this block", so normal `render=svg` blocks do not implicitly share state with each other. Preambles cannot have labels or other target-line attributes.
+
+A Typst embed with `caption` is a titled reference target, so `@flow` can omit reference text. Without `caption`, it behaves like any other untitled target and requires explicit text such as `@flow[flow diagram]`.
+
+HTML output uses `<figure class="TypMark-typst-block" data-typmark="typst" data-render="svg">`, with the Typst result embedded as inline SVG. If rendering fails, the figure receives the `TypMark-typst-error` class and displays the original Typst source. Multiple-page output emits `W_TYPST_MULTI_PAGE` and keeps only the first page.
+
+When using Typst packages such as CeTZ, TypMark does not download packages. Users must install the package in Typst's normal package data/cache ahead of time, or set `TYPMARK_TYPST_PACKAGE_PATHS` to a package root. A package root is the directory containing paths such as `preview/cetz/0.4.2`. Separate multiple roots with `:` on Unix/macOS and `;` on Windows.
+
+Regular local file reads, remote URLs, and OS package-cache reads from the WASM build are unsupported. An attempted external read emits `W_TYPST_EXTERNAL_ASSET` together with `E_TYPST_RENDER`. Files inside an installed package are available only when the package is found through the paths above.
+
+Composed Typst source is limited to 256 KiB, compiled output to 16 pages, and the first-page SVG to 8 MiB. Exceeding a limit emits `E_TYPST_RESOURCE_LIMIT` and preserves the source fallback. These deterministic artifact limits do not bound compilation time; hosts rendering untrusted input must provide process or worker isolation.
+
 ## Code blocks
 Fenced code blocks use figure. Each line has data-line. This applies even when the language token is omitted. Lines marked as diff deletions do not receive data-line and do not increment displayed line numbers.
 

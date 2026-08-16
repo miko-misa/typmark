@@ -379,28 +379,67 @@ blockquote {
   z-index: 1;
 }
 
+.TypMark-typst-block {
+  margin: 1.25rem 0;
+  overflow-x: auto;
+}
+
+.TypMark-typst-svg {
+  display: flex;
+  justify-content: center;
+}
+
+.TypMark-typst-block .typst-doc {
+  display: block;
+  flex: 0 0 auto;
+  max-width: 100%;
+  height: auto;
+}
+
+.TypMark-typst-block figcaption {
+  margin-top: 0.5rem;
+  text-align: center;
+  color: var(--typmark-muted);
+  font-size: 0.9em;
+}
+
+.TypMark-typst-error pre {
+  border-color: var(--typmark-danger);
+}
+
 .typst-doc {
   display: inline-block;
   color: var(--typmark-fg);
 }
 
-.typst-doc .typst-shape {
+.TypMark-math-block .typst-doc .typst-shape,
+.TypMark-math-inline .typst-doc .typst-shape {
   fill: currentColor;
 }
 
-.typst-doc use,
-.typst-doc .typst-text {
+.TypMark-math-block .typst-doc use,
+.TypMark-math-block .typst-doc .typst-text,
+.TypMark-math-inline .typst-doc use,
+.TypMark-math-inline .typst-doc .typst-text {
   fill: currentColor;
 }
 
-.typst-doc .typst-shape[stroke]:not([stroke="none"]) {
+.TypMark-math-block .typst-doc .typst-shape[stroke]:not([stroke="none"]),
+.TypMark-math-inline .typst-doc .typst-shape[stroke]:not([stroke="none"]) {
   stroke: currentColor;
 }
 
-.typst-doc .typst-shape[fill="#ffffff"],
-.typst-doc .typst-shape[fill="#fff"],
-.typst-doc .typst-shape[fill="white"] {
+.TypMark-math-block .typst-doc .typst-shape[fill="#ffffff"],
+.TypMark-math-block .typst-doc .typst-shape[fill="#fff"],
+.TypMark-math-block .typst-doc .typst-shape[fill="white"],
+.TypMark-math-inline .typst-doc .typst-shape[fill="#ffffff"],
+.TypMark-math-inline .typst-doc .typst-shape[fill="#fff"],
+.TypMark-math-inline .typst-doc .typst-shape[fill="white"] {
   fill: transparent;
+}
+
+.TypMark-typst-block .typst-text use[fill="#000000"] {
+  fill: currentColor;
 }
 
 ul.task-list {

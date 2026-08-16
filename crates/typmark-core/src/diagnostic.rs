@@ -9,10 +9,15 @@ pub const E_REF_SELF_TITLE: &str = "E_REF_SELF_TITLE";
 pub const E_REF_DEPTH: &str = "E_REF_DEPTH";
 pub const E_MATH_INLINE_NL: &str = "E_MATH_INLINE_NL";
 pub const E_CODE_CONFLICT: &str = "E_CODE_CONFLICT";
+pub const E_TYPST_RENDER: &str = "E_TYPST_RENDER";
+pub const E_TYPST_RESOURCE_LIMIT: &str = "E_TYPST_RESOURCE_LIMIT";
 
 pub const W_REF_MISSING: &str = "W_REF_MISSING";
 pub const W_CODE_RANGE_OOB: &str = "W_CODE_RANGE_OOB";
 pub const W_BOX_STYLE_INVALID: &str = "W_BOX_STYLE_INVALID";
+pub const W_TYPST_ATTR_INVALID: &str = "W_TYPST_ATTR_INVALID";
+pub const W_TYPST_EXTERNAL_ASSET: &str = "W_TYPST_EXTERNAL_ASSET";
+pub const W_TYPST_MULTI_PAGE: &str = "W_TYPST_MULTI_PAGE";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Diagnostic {

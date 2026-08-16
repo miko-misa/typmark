@@ -231,6 +231,37 @@ $$
 
 インライン数式は `<span class="TypMark-math-inline">` に包まれ、行の高さを確保する `<span class="TypMark-math-inline-strut">` と Typst の SVG が入る。失敗した場合は元の文字列を error 用の class で出力する。
 
+## Typst 埋め込み
+
+Typst の一部を図として埋め込む場合は、`typst` のコードフェンスに `render=svg` を付ける。`render=svg` がない `typst` フェンスはコードブロックのまま出力される。
+
+入力
+
+````
+```typst {scope=preamble}
+#let flow-fill = rgb("#e8f1fb")
+```
+
+{#flow}
+```typst {render=svg caption="Flow diagram"}
+#rect(width: 80pt, height: 28pt, fill: flow-fill, stroke: rgb("#1f5da8"))
+```
+
+See @flow.
+````
+
+`scope=preamble` の Typst ブロックは HTML に出力されず、同じ文書内のすべての Typst 埋め込みブロックの前に連結される。共通の `#import`、`#let`、`#set` をここに置ける。各埋め込みブロックは「全文書の preamble + そのブロック」として独立にコンパイルされるため、通常の `render=svg` ブロック同士で暗黙に状態は共有されない。preamble にはラベルやその他の target-line 属性を付けられない。
+
+`caption` がある Typst 埋め込みはタイトルを持つ参照先になり、`@flow` のように参照テキストを省略できる。`caption` がない場合は通常のタイトルなし要素と同じく `@flow[flow diagram]` のように参照テキストが必要になる。
+
+HTML では `<figure class="TypMark-typst-block" data-typmark="typst" data-render="svg">` として出力され、Typst の結果はインライン SVG として埋め込まれる。レンダリングに失敗した場合は `TypMark-typst-error` class が付き、元の Typst ソースが表示される。複数ページになった場合は `W_TYPST_MULTI_PAGE` を出し、先頭ページだけを使用する。
+
+CeTZ などの Typst パッケージを使う場合、TypMark はパッケージをダウンロードしない。利用者は事前に Typst の通常の package data/cache にパッケージを入れるか、`TYPMARK_TYPST_PACKAGE_PATHS` に package root を指定する必要がある。package root は `preview/cetz/0.4.2` のような階層を含むディレクトリを指す。複数指定する場合は Unix/macOS では `:`、Windows では `;` で区切る。
+
+通常のローカルファイル読み込み、リモート URL、WASM 版での OS package cache 読み込みはサポートされない。外部読み込みを試みると `W_TYPST_EXTERNAL_ASSET` と `E_TYPST_RENDER` が出る。パッケージ内部のファイルは、そのパッケージが上記の場所から見つかる場合だけ利用できる。
+
+連結後の Typst ソースは 256 KiB、コンパイル結果は 16 ページ、先頭ページの SVG は 8 MiB に制限される。超過時は `E_TYPST_RESOURCE_LIMIT` を出し、元ソースを表示する。これらは生成物の決定的な上限でありコンパイル時間は制限しないため、信頼できない入力を扱うホストは別プロセスまたは Worker で隔離する必要がある。
+
 ## コードブロック
 コードフェンスは figure で出力される。各行に data-line が付く。言語指定がない場合も同じ。diff の削除行は data-line を付けず、表示上の行番号も増えない。
 

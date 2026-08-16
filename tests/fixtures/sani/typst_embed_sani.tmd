@@ -1,0 +1,9 @@
+```typst {render=svg}
+#stack(
+  dir: ltr,
+  spacing: 4pt,
+  rect(width: 12pt, height: 6pt, fill: gradient.linear(red, blue)),
+  circle(radius: 3pt, stroke: (paint: red, thickness: 1pt, dash: "dashed")),
+  box(width: 5pt, height: 5pt, clip: true)[Text],
+)
+```

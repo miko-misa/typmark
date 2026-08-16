@@ -166,6 +166,16 @@ fn pdf_extra_css(margin: Option<&PdfMargin>) -> String {
     height: auto !important;\n\
     margin: 0 auto;\n\
   }}\n\
+  .TypMark-typst-block {{\n\
+    overflow: visible;\n\
+  }}\n\
+  .TypMark-typst-block .typst-doc {{\n\
+    display: block;\n\
+    max-width: 100% !important;\n\
+    width: auto !important;\n\
+    height: auto !important;\n\
+    margin: 0 auto;\n\
+  }}\n\
   * {{\n\
     box-sizing: border-box;\n\
   }}\n\

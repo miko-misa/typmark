@@ -1,0 +1,26 @@
+[
+  {
+    "code": "W_TYPST_ATTR_INVALID",
+    "severity": "warning",
+    "range": {
+      "start": { "line": 7, "character": 17 },
+      "end": { "line": 7, "character": 20 }
+    }
+  },
+  {
+    "code": "E_TYPST_RENDER",
+    "severity": "error",
+    "range": {
+      "start": { "line": 11, "character": 0 },
+      "end": { "line": 13, "character": 3 }
+    }
+  },
+  {
+    "code": "E_REF_OMIT",
+    "severity": "error",
+    "range": {
+      "start": { "line": 5, "character": 4 },
+      "end": { "line": 5, "character": 14 }
+    }
+  }
+]

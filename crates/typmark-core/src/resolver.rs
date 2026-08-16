@@ -2,13 +2,17 @@ use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
     Block, BlockKind, BoxBlock, Document, Inline, InlineKind, InlineSeq, Label, LinkDefinition,
-    LinkRefMeta, List, ResolvedRef,
+    LinkRefMeta, List, ResolvedRef, TypstBlock,
 };
 use crate::diagnostic::{
     Diagnostic, DiagnosticSeverity, E_LABEL_DUP, E_REF_DEPTH, E_REF_OMIT, E_REF_SELF_TITLE,
-    W_REF_MISSING,
+    E_TYPST_RENDER, E_TYPST_RESOURCE_LIMIT, W_REF_MISSING, W_TYPST_EXTERNAL_ASSET,
+    W_TYPST_MULTI_PAGE,
 };
 use crate::label::{normalize_link_label, unescape_backslash_punct};
+use crate::math::{
+    TypstResourceLimit, collect_typst_preamble, render_typst_svg, typst_source_with_preamble,
+};
 use crate::section::build_sections;
 use crate::source_map::SourceMap;
 use crate::span::Span;
@@ -49,6 +53,13 @@ pub fn resolve(
     let mut labels = HashMap::new();
     collect_labels(&document.blocks, &mut labels, &mut diagnostics, source_map);
     check_self_reference_titles(&document.blocks, &mut diagnostics, source_map);
+    let typst_preamble = collect_typst_preamble(&document.blocks);
+    validate_typst_blocks(
+        &document.blocks,
+        &typst_preamble,
+        &mut diagnostics,
+        source_map,
+    );
     resolve_refs(&mut document.blocks, &labels, &mut diagnostics, source_map);
 
     ResolveResult {
@@ -97,6 +108,12 @@ fn resolve_link_refs_in_blocks(
                     resolve_link_refs_inlines(title, source, link_defs);
                 }
                 resolve_link_refs_in_blocks(blocks, source, link_defs);
+            }
+            BlockKind::TypstBlock(TypstBlock {
+                caption: Some(caption),
+                ..
+            }) => {
+                resolve_link_refs_inlines(caption, source, link_defs);
             }
             _ => {}
         }
@@ -220,12 +237,18 @@ fn collect_labels(
 ) {
     // Build a label table for blocks and code-line labels, reporting duplicates.
     for block in blocks {
-        if let Some(label) = block.attrs.label.as_ref() {
+        if !matches!(&block.kind, BlockKind::TypstPreamble(_))
+            && let Some(label) = block.attrs.label.as_ref()
+        {
             let (kind, title) = match &block.kind {
                 BlockKind::Section { title, .. } => (LabelKind::Title, Some(title.clone())),
                 BlockKind::Box(BoxBlock { title, .. }) if title.is_some() => {
                     (LabelKind::Title, title.clone())
                 }
+                BlockKind::TypstBlock(TypstBlock {
+                    caption: Some(caption),
+                    ..
+                }) => (LabelKind::Title, Some(caption.clone())),
                 _ => (LabelKind::Block, None),
             };
             insert_label(labels, label, kind, title, diagnostics, source_map);
@@ -331,6 +354,21 @@ fn check_self_reference_titles(
                     ));
                 }
             }
+            BlockKind::TypstBlock(TypstBlock {
+                caption: Some(caption),
+                ..
+            }) => {
+                if let Some(label) = block.attrs.label.as_ref()
+                    && let Some(span) = find_self_ref(caption, &label.name)
+                {
+                    diagnostics.push(Diagnostic::new(
+                        source_map.range(span),
+                        DiagnosticSeverity::Error,
+                        E_REF_SELF_TITLE,
+                        "self-reference in title",
+                    ));
+                }
+            }
             _ => {}
         }
 
@@ -392,6 +430,75 @@ fn find_self_ref(inlines: &[Inline], label: &str) -> Option<Span> {
     None
 }
 
+fn validate_typst_blocks(
+    blocks: &[Block],
+    typst_preamble: &str,
+    diagnostics: &mut Vec<Diagnostic>,
+    source_map: &SourceMap,
+) {
+    for block in blocks {
+        match &block.kind {
+            BlockKind::TypstBlock(TypstBlock { typst_src, .. }) => {
+                let source = typst_source_with_preamble(typst_src, typst_preamble);
+                let outcome = render_typst_svg(&source);
+                if outcome.external_asset_requested {
+                    diagnostics.push(Diagnostic::new(
+                        source_map.range(block.span),
+                        DiagnosticSeverity::Warning,
+                        W_TYPST_EXTERNAL_ASSET,
+                        "Typst external assets are disabled",
+                    ));
+                }
+                if let Some(limit) = outcome.resource_limit {
+                    let message = match limit {
+                        TypstResourceLimit::SourceBytes => "Typst source exceeds the 256 KiB limit",
+                        TypstResourceLimit::Pages => "Typst block exceeds the 16-page limit",
+                        TypstResourceLimit::SvgBytes => "Typst SVG exceeds the 8 MiB limit",
+                    };
+                    diagnostics.push(Diagnostic::new(
+                        source_map.range(block.span),
+                        DiagnosticSeverity::Error,
+                        E_TYPST_RESOURCE_LIMIT,
+                        message,
+                    ));
+                } else {
+                    if outcome.page_count > 1 {
+                        diagnostics.push(Diagnostic::new(
+                            source_map.range(block.span),
+                            DiagnosticSeverity::Warning,
+                            W_TYPST_MULTI_PAGE,
+                            "Typst block produced multiple pages; only the first page is rendered",
+                        ));
+                    }
+                    if outcome.svg.is_none() {
+                        diagnostics.push(Diagnostic::new(
+                            source_map.range(block.span),
+                            DiagnosticSeverity::Error,
+                            E_TYPST_RENDER,
+                            "Typst block failed to render",
+                        ));
+                    }
+                }
+            }
+            BlockKind::List(List { items, .. }) => {
+                for item in items {
+                    validate_typst_blocks(&item.blocks, typst_preamble, diagnostics, source_map);
+                }
+            }
+            BlockKind::BlockQuote { blocks } => {
+                validate_typst_blocks(blocks, typst_preamble, diagnostics, source_map);
+            }
+            BlockKind::Box(BoxBlock { blocks, .. }) => {
+                validate_typst_blocks(blocks, typst_preamble, diagnostics, source_map);
+            }
+            BlockKind::Section { children, .. } => {
+                validate_typst_blocks(children, typst_preamble, diagnostics, source_map);
+            }
+            _ => {}
+        }
+    }
+}
+
 fn resolve_refs(
     blocks: &mut [Block],
     labels: &HashMap<String, LabelInfo>,
@@ -425,6 +532,12 @@ fn resolve_refs(
                     resolve_inlines(title, labels, diagnostics, source_map);
                 }
                 resolve_refs(blocks, labels, diagnostics, source_map);
+            }
+            BlockKind::TypstBlock(TypstBlock {
+                caption: Some(caption),
+                ..
+            }) => {
+                resolve_inlines(caption, labels, diagnostics, source_map);
             }
             _ => {}
         }

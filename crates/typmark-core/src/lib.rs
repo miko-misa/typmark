@@ -13,12 +13,13 @@ mod span;
 pub use ast::{
     AttrItem, AttrList, AttrValue, Block, BlockKind, BoxBlock, CodeBlock, CodeMeta, Document,
     Inline, InlineKind, InlineSeq, Label, LineLabel, LineRange, List, ListItem, NodeId,
-    ResolvedRef,
+    ResolvedRef, TypstBlock, TypstPreamble, TypstRenderMode,
 };
 pub use diagnostic::{
     Diagnostic, DiagnosticSeverity, E_ATTR_SYNTAX, E_CODE_CONFLICT, E_LABEL_DUP, E_MATH_INLINE_NL,
-    E_REF_BRACKET_NL, E_REF_DEPTH, E_REF_OMIT, E_REF_SELF_TITLE, E_TARGET_ORPHAN,
-    RelatedDiagnostic, W_BOX_STYLE_INVALID, W_CODE_RANGE_OOB, W_REF_MISSING,
+    E_REF_BRACKET_NL, E_REF_DEPTH, E_REF_OMIT, E_REF_SELF_TITLE, E_TARGET_ORPHAN, E_TYPST_RENDER,
+    E_TYPST_RESOURCE_LIMIT, RelatedDiagnostic, W_BOX_STYLE_INVALID, W_CODE_RANGE_OOB,
+    W_REF_MISSING, W_TYPST_ATTR_INVALID, W_TYPST_EXTERNAL_ASSET, W_TYPST_MULTI_PAGE,
 };
 pub use emit::{
     HtmlEmitOptions, emit_html, emit_html_document_sanitized_with_options,

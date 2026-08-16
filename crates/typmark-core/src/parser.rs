@@ -1,11 +1,11 @@
 use crate::ast::{
     AttrItem, AttrList, AttrValue, Block, BlockKind, BoxBlock, CodeBlock, CodeBlockKind, CodeMeta,
     Document, Inline, InlineKind, InlineSeq, Label, LineLabel, LineRange, LinkDefinition,
-    LinkRefMeta, List, ListItem, Table, TableAlign,
+    LinkRefMeta, List, ListItem, Table, TableAlign, TypstBlock, TypstPreamble, TypstRenderMode,
 };
 use crate::diagnostic::{
     Diagnostic, DiagnosticSeverity, E_ATTR_SYNTAX, E_CODE_CONFLICT, E_MATH_INLINE_NL,
-    E_REF_BRACKET_NL, E_TARGET_ORPHAN, W_BOX_STYLE_INVALID, W_CODE_RANGE_OOB,
+    E_REF_BRACKET_NL, E_TARGET_ORPHAN, W_BOX_STYLE_INVALID, W_CODE_RANGE_OOB, W_TYPST_ATTR_INVALID,
 };
 use crate::entities::lookup_named_entity;
 use crate::label::{is_label_escape, normalize_link_label};
@@ -151,7 +151,7 @@ impl Parser {
                 continue;
             }
 
-            if let Some((block, next)) = self.parse_code_block(lines, i) {
+            if let Some((block, next)) = self.parse_code_block(lines, i, parse_inlines) {
                 let mut block = block;
                 self.finalize_block(&mut block, &mut pending_attrs);
                 blocks.push(block);
@@ -280,6 +280,24 @@ impl Parser {
         self.apply_pending_attrs(block, pending);
         if let BlockKind::Box(_) = block.kind {
             self.validate_box_styles(&block.attrs);
+        }
+        if matches!(block.kind, BlockKind::TypstPreamble(_)) {
+            if let Some(label) = block.attrs.label.take() {
+                self.push_diag(
+                    label.span,
+                    DiagnosticSeverity::Warning,
+                    W_TYPST_ATTR_INVALID,
+                    "Typst preamble cannot be labeled",
+                );
+            }
+            for item in std::mem::take(&mut block.attrs.items) {
+                self.push_diag(
+                    item.value.span,
+                    DiagnosticSeverity::Warning,
+                    W_TYPST_ATTR_INVALID,
+                    "Typst preamble does not support target attributes",
+                );
+            }
         }
     }
 
@@ -493,7 +511,12 @@ impl Parser {
         (Some(block), i)
     }
 
-    fn parse_code_block(&mut self, lines: &[Line], start: usize) -> Option<(Block, usize)> {
+    fn parse_code_block(
+        &mut self,
+        lines: &[Line],
+        start: usize,
+        parse_inlines: bool,
+    ) -> Option<(Block, usize)> {
         let line = &lines[start];
         let (indent_len, fence_len, fence_char, info) = parse_fence_open(&line.text)?;
         let (lang, info_attrs) = self.parse_fence_info(line, fence_len, info);
@@ -511,7 +534,6 @@ impl Parser {
             i += 1;
         }
         let text = code_lines.join("\n");
-        let meta = self.parse_code_meta(&info_attrs, &text, line.start, line.end);
         let mut block_attrs = AttrList::default();
         if let Some(label) = info_attrs.label.clone() {
             block_attrs.span = info_attrs.span;
@@ -525,20 +547,95 @@ impl Parser {
                 lines[i.saturating_sub(1)].end
             },
         };
+        let has_typst_directive = lang.as_deref() == Some("typst")
+            && (find_attr(&info_attrs, "scope").is_some()
+                || find_attr(&info_attrs, "render").is_some());
+        let typst_block = if lang.as_deref() == Some("typst") {
+            self.typst_block_from_code_info(&info_attrs, &text, parse_inlines)
+        } else {
+            None
+        };
+        let kind = if let Some(kind) = typst_block {
+            kind
+        } else {
+            let info_attrs = if has_typst_directive {
+                filter_attrs(&info_attrs, &["caption", "render", "scope"])
+            } else {
+                info_attrs
+            };
+            let meta = self.parse_code_meta(&info_attrs, &text, line.start, line.end);
+            BlockKind::CodeBlock(CodeBlock {
+                kind: CodeBlockKind::Fenced,
+                lang,
+                info_attrs,
+                meta,
+                text,
+            })
+        };
         Some((
             Block {
                 span,
                 attrs: block_attrs,
-                kind: BlockKind::CodeBlock(CodeBlock {
-                    kind: CodeBlockKind::Fenced,
-                    lang,
-                    info_attrs,
-                    meta,
-                    text,
-                }),
+                kind,
             },
             i,
         ))
+    }
+
+    fn typst_block_from_code_info(
+        &mut self,
+        info_attrs: &AttrList,
+        typst_src: &str,
+        parse_inlines: bool,
+    ) -> Option<BlockKind> {
+        if let Some(scope) = find_attr(info_attrs, "scope") {
+            if scope.value.raw == "preamble" {
+                for item in &info_attrs.items {
+                    if item.key != "scope" {
+                        self.push_diag(
+                            item.value.span,
+                            DiagnosticSeverity::Warning,
+                            W_TYPST_ATTR_INVALID,
+                            "Typst preamble only supports scope=preamble",
+                        );
+                    }
+                }
+                return Some(BlockKind::TypstPreamble(TypstPreamble {
+                    typst_src: typst_src.to_string(),
+                    info_attrs: AttrList::default(),
+                }));
+            }
+            self.push_diag(
+                scope.value.span,
+                DiagnosticSeverity::Warning,
+                W_TYPST_ATTR_INVALID,
+                "invalid Typst scope",
+            );
+            return None;
+        }
+
+        let render = find_attr(info_attrs, "render")?;
+        if render.value.raw != "svg" {
+            self.push_diag(
+                render.value.span,
+                DiagnosticSeverity::Warning,
+                W_TYPST_ATTR_INVALID,
+                "invalid Typst render mode",
+            );
+            return None;
+        }
+
+        let caption = find_attr(info_attrs, "caption").and_then(|item| {
+            parse_inlines.then(|| self.parse_inline(&item.value.raw, item.value.span.start))
+        });
+        let info_attrs = filter_attrs(info_attrs, &["caption", "render"]);
+
+        Some(BlockKind::TypstBlock(TypstBlock {
+            typst_src: typst_src.to_string(),
+            caption,
+            render: TypstRenderMode::Svg,
+            info_attrs,
+        }))
     }
 
     fn parse_indented_code_block(&self, lines: &[Line], start: usize) -> Option<(Block, usize)> {
@@ -2866,6 +2963,18 @@ fn split_lines(source: &str) -> Vec<Line> {
         });
     }
     lines
+}
+
+fn find_attr<'a>(attrs: &'a AttrList, key: &str) -> Option<&'a AttrItem> {
+    attrs.items.iter().find(|item| item.key == key)
+}
+
+fn filter_attrs(attrs: &AttrList, skip_keys: &[&str]) -> AttrList {
+    let mut out = attrs.clone();
+    out.label = None;
+    out.items
+        .retain(|item| !skip_keys.iter().any(|key| item.key == *key));
+    out
 }
 
 #[derive(Clone, Copy, Debug)]

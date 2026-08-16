@@ -177,6 +177,28 @@ fn check_block(block: &Block, source_len: usize, context: &str) -> Result<(), St
                 )?;
             }
         }
+        BlockKind::TypstBlock(typst_block) => {
+            check_attr_list(
+                &typst_block.info_attrs,
+                source_len,
+                &format!("{}.typst.info_attrs", context),
+            )?;
+            if let Some(caption) = &typst_block.caption {
+                check_inline_seq(
+                    caption,
+                    block.span,
+                    source_len,
+                    &format!("{}.typst.caption", context),
+                )?;
+            }
+        }
+        BlockKind::TypstPreamble(typst_preamble) => {
+            check_attr_list(
+                &typst_preamble.info_attrs,
+                source_len,
+                &format!("{}.typst_preamble.info_attrs", context),
+            )?;
+        }
         BlockKind::Table(table) => {
             for (idx, header) in table.headers.iter().enumerate() {
                 check_inline_seq(

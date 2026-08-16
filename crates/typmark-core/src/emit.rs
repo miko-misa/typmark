@@ -1,25 +1,44 @@
 use crate::ast::{
     AttrItem, AttrList, Block, BlockKind, BoxBlock, CodeBlock, CodeBlockKind, CodeMeta, Inline,
-    InlineKind, Label, LineRange, List, ResolvedRef, Table, TableAlign,
+    InlineKind, Label, LineRange, List, ResolvedRef, Table, TableAlign, TypstBlock,
+    TypstRenderMode,
 };
-use crate::math::{MathSettings, prefix_svg_ids, render_math};
+use crate::math::{
+    MathSettings, collect_typst_preamble, prefix_svg_ids, prefix_typst_svg_ids, render_math,
+    render_typst_svg, typst_source_with_preamble,
+};
 use crate::source_map::SourceMap;
 use crate::span::Span;
 use ammonia::Builder;
 use std::collections::{HashMap, HashSet};
 
-const SVG_ALLOWED_TAGS: &[&str] = &["svg", "g", "defs", "path", "symbol", "use"];
+const SVG_ALLOWED_TAGS: &[&str] = &[
+    "svg",
+    "g",
+    "defs",
+    "path",
+    "symbol",
+    "use",
+    "clipPath",
+    "linearGradient",
+    "radialGradient",
+    "pattern",
+    "stop",
+];
 
 const SVG_ALLOWED_ATTRS: &[(&str, &[&str])] = &[
     ("svg", &["viewBox", "width", "height", "class"]),
-    ("g", &["transform", "class"]),
+    ("g", &["transform", "class", "clip-path"]),
     (
         "path",
         &[
             "d",
             "fill",
             "fill-rule",
+            "shape-rendering",
             "stroke",
+            "stroke-dasharray",
+            "stroke-dashoffset",
             "stroke-linecap",
             "stroke-linejoin",
             "stroke-miterlimit",
@@ -31,6 +50,53 @@ const SVG_ALLOWED_ATTRS: &[(&str, &[&str])] = &[
     ("defs", &["id"]),
     ("symbol", &["id", "overflow"]),
     ("use", &["href", "x", "y", "fill", "fill-rule"]),
+    ("clipPath", &["id"]),
+    (
+        "linearGradient",
+        &[
+            "id",
+            "spreadMethod",
+            "gradientUnits",
+            "gradientTransform",
+            "x1",
+            "y1",
+            "x2",
+            "y2",
+            "href",
+        ],
+    ),
+    (
+        "radialGradient",
+        &[
+            "id",
+            "spreadMethod",
+            "gradientUnits",
+            "gradientTransform",
+            "cx",
+            "cy",
+            "r",
+            "fx",
+            "fy",
+            "fr",
+            "href",
+        ],
+    ),
+    (
+        "pattern",
+        &[
+            "id",
+            "viewBox",
+            "preserveAspectRatio",
+            "patternUnits",
+            "patternTransform",
+            "width",
+            "height",
+            "x",
+            "y",
+            "href",
+        ],
+    ),
+    ("stop", &["offset", "stop-color"]),
 ];
 
 /// Options for HTML emission.
@@ -62,6 +128,7 @@ pub fn emit_html(blocks: &[Block]) -> String {
 pub fn emit_html_with_options(blocks: &[Block], options: &HtmlEmitOptions) -> String {
     // Deterministic formatting: 2-space indentation and LF newlines.
     let mut writer = HtmlWriter::new(options.clone(), MathSettings::default());
+    writer.typst_preamble = collect_typst_preamble(blocks);
     for block in blocks {
         emit_block(&mut writer, block);
     }
@@ -75,6 +142,7 @@ pub fn emit_html_document_with_options(
 ) -> String {
     let math_settings = math_settings_from_attrs(document.settings.as_ref());
     let mut writer = HtmlWriter::new(options.clone(), math_settings);
+    writer.typst_preamble = collect_typst_preamble(&document.blocks);
     for block in &document.blocks {
         emit_block(&mut writer, block);
     }
@@ -89,6 +157,7 @@ pub fn emit_html_document_with_options_and_source_map(
 ) -> String {
     let math_settings = math_settings_from_attrs(document.settings.as_ref());
     let mut writer = HtmlWriter::new_with_source_map(options.clone(), math_settings, source_map);
+    writer.typst_preamble = collect_typst_preamble(&document.blocks);
     for block in &document.blocks {
         emit_block(&mut writer, block);
     }
@@ -171,6 +240,7 @@ fn sanitize_html(raw_html: &str) -> String {
         "td",
         "input",
         "figure",
+        "figcaption",
         "span",
     ]
     .iter()
@@ -212,7 +282,7 @@ fn sanitize_html(raw_html: &str) -> String {
     );
     tag_attributes.insert(
         "figure",
-        ["class", "data-typmark", "data-lang", "id"]
+        ["class", "data-typmark", "data-lang", "data-render", "id"]
             .iter()
             .copied()
             .collect(),
@@ -262,6 +332,7 @@ struct HtmlWriter {
     options: HtmlEmitOptions,
     math_counter: usize,
     math_settings: MathSettings,
+    typst_preamble: String,
     source_map: Option<SourceMap>,
 }
 
@@ -280,6 +351,7 @@ impl HtmlWriter {
             options,
             math_counter: 0,
             math_settings,
+            typst_preamble: String::new(),
             source_map: None,
         }
     }
@@ -624,6 +696,10 @@ fn emit_block(writer: &mut HtmlWriter, block: &Block) {
                 )),
             }
         }
+        BlockKind::TypstBlock(typst_block) => {
+            emit_typst_block(writer, block, typst_block);
+        }
+        BlockKind::TypstPreamble(_) => {}
         BlockKind::ThematicBreak => {
             let attrs = compose_block_attrs_with_span(
                 block.attrs.label.as_ref(),
@@ -768,6 +844,60 @@ struct CodeBlockRender<'a> {
     text: &'a str,
 }
 
+fn emit_typst_block(writer: &mut HtmlWriter, block: &Block, typst_block: &TypstBlock) {
+    let render_result = render_typst_with_prefix(
+        &typst_block.typst_src,
+        &writer.typst_preamble,
+        &mut writer.math_counter,
+    );
+    let class = if render_result.is_ok() {
+        "TypMark-typst-block"
+    } else {
+        "TypMark-typst-block TypMark-typst-error"
+    };
+    let render_value = match typst_block.render {
+        TypstRenderMode::Svg => "svg",
+    };
+    let mut attrs = format!(
+        "class=\"{}\" data-typmark=\"typst\" data-render=\"{}\"",
+        class, render_value
+    );
+    attrs.push_str(&span_attr(block.span, writer.source_map.as_ref()));
+    attrs.push_str(&id_attr(block.attrs.label.as_ref()));
+    attrs.push_str(&data_attrs(&block.attrs.items));
+    attrs.push_str(&data_attrs(&typst_block.info_attrs.items));
+
+    writer.line(&format!("<figure {}>", attrs));
+    writer.indent += 1;
+    match render_result {
+        Ok(svg) => {
+            writer.line("<div class=\"TypMark-typst-svg\">");
+            writer.indent += 1;
+            writer.line(&svg);
+            writer.indent -= 1;
+            writer.line("</div>");
+        }
+        Err(source) => {
+            writer.out.push_str(&"  ".repeat(writer.indent));
+            writer.out.push_str("<pre><code>");
+            writer.out.push_str(&escape_html_code(&source));
+            writer.out.push_str("</code></pre>\n");
+        }
+    }
+    if let Some(caption) = &typst_block.caption {
+        let caption_html = render_inlines_with_context(
+            caption,
+            RenderContext::Title,
+            &mut writer.math_counter,
+            &writer.math_settings,
+            writer.source_map.as_ref(),
+        );
+        writer.line(&format!("<figcaption>{}</figcaption>", caption_html));
+    }
+    writer.indent -= 1;
+    writer.line("</figure>");
+}
+
 fn emit_code_block(writer: &mut HtmlWriter, data: CodeBlockRender<'_>) {
     let mut attrs = data.attrs;
     attrs.push_str(&data_attrs(data.info_items));
@@ -887,6 +1017,22 @@ fn render_math_with_prefix(
     *math_counter += 1;
     let prefix = format!("tm-m{}", *math_counter);
     render_math(typst_src, display, math_settings).map(|svg| prefix_svg_ids(&svg, &prefix))
+}
+
+fn render_typst_with_prefix(
+    typst_src: &str,
+    typst_preamble: &str,
+    math_counter: &mut usize,
+) -> Result<String, String> {
+    *math_counter += 1;
+    let prefix = format!("tm-t{}", *math_counter);
+    let source = typst_source_with_preamble(typst_src, typst_preamble);
+    let outcome = render_typst_svg(&source);
+    outcome
+        .svg
+        .as_ref()
+        .map(|svg| prefix_typst_svg_ids(svg, &prefix))
+        .ok_or_else(|| typst_src.to_string())
 }
 
 fn render_inlines_with_context(
@@ -1521,8 +1667,8 @@ fn id_attr(label: Option<&Label>) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{SVG_ALLOWED_ATTRS, SVG_ALLOWED_TAGS};
-    use crate::math::{MathSettings, render_math};
+    use super::{SVG_ALLOWED_ATTRS, SVG_ALLOWED_TAGS, sanitize_html};
+    use crate::math::{MathSettings, render_math, render_typst_svg};
     use std::collections::{BTreeMap, BTreeSet};
 
     fn collect_svg_tags(svg: &str) -> BTreeMap<String, BTreeSet<String>> {
@@ -1565,6 +1711,20 @@ mod tests {
                 }
             }
         }
+        let embed = render_typst_svg(
+            r##"#stack(
+  dir: ltr,
+  rect(width: 12pt, height: 6pt, fill: gradient.linear(red, blue)),
+  rect(width: 12pt, height: 6pt, fill: gradient.radial(red, blue)),
+  rect(width: 12pt, height: 6pt, fill: gradient.conic(red, blue)),
+  circle(radius: 3pt, stroke: (paint: red, thickness: 1pt, dash: "dashed")),
+  box(width: 5pt, height: 5pt, clip: true)[Text],
+)"##,
+        );
+        let embed_svg = embed.svg.as_deref().expect("typst embed render failed");
+        for (tag, attrs) in collect_svg_tags(embed_svg) {
+            observed.entry(tag).or_default().extend(attrs);
+        }
 
         let expected_tags: BTreeSet<String> = SVG_ALLOWED_TAGS
             .iter()
@@ -1582,5 +1742,36 @@ mod tests {
         }
 
         assert_eq!(observed, expected_attrs, "SVG attribute allowlist mismatch");
+    }
+
+    #[test]
+    fn sanitizer_preserves_supported_gradient_kinds() {
+        let embed = render_typst_svg(
+            "#stack(\n  rect(width: 8pt, height: 8pt, fill: gradient.linear(red, blue)),\n  rect(width: 8pt, height: 8pt, fill: gradient.radial(red, blue)),\n  rect(width: 8pt, height: 8pt, fill: gradient.conic(red, blue)),\n)",
+        );
+        let cleaned = sanitize_html(embed.svg.as_deref().expect("typst embed render failed"));
+
+        for required in [
+            "<linearGradient",
+            "<radialGradient",
+            "<pattern",
+            "<stop",
+            "gradientTransform=",
+            "patternTransform=",
+            "preserveAspectRatio=",
+        ] {
+            assert!(cleaned.contains(required), "sanitizer removed {required}");
+        }
+    }
+
+    #[test]
+    fn sanitizer_removes_active_svg_content() {
+        let cleaned = sanitize_html(
+            r#"<svg><script>alert(1)</script><foreignObject onload="alert(2)"><p>text</p></foreignObject></svg>"#,
+        );
+
+        assert!(!cleaned.contains("<script"));
+        assert!(!cleaned.contains("foreignObject"));
+        assert!(!cleaned.contains("onload"));
     }
 }

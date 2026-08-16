@@ -130,11 +130,10 @@ fn commonmark_spec() {
         }
     }
 
-    // Target: >95% pass rate for Phase 1
-    // For now, we'll assert at least 50% to establish baseline
+    // Phase 1 gate: preserve at least 95% CommonMark compatibility.
     assert!(
-        pass_rate >= 50.0,
-        "CommonMark pass rate ({:.1}%) is below baseline (50%). Failed {} / {} tests.",
+        pass_rate >= 95.0,
+        "CommonMark pass rate ({:.1}%) is below baseline (95%). Failed {} / {} tests.",
         pass_rate,
         failed,
         passed + failed

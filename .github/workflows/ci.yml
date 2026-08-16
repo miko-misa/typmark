@@ -12,13 +12,16 @@ jobs:
   rust:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@1.85
+      - uses: dtolnay/rust-toolchain@1d1eb14921d9c2d8ea575663e5fe3a0b57868a05
         with:
           components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c  # v2
 
       - name: cargo fmt
         if: ${{ hashFiles('**/*.rs') != '' }}
@@ -26,8 +29,14 @@ jobs:
 
       - name: cargo clippy
         if: ${{ hashFiles('**/*.rs') != '' }}
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: >-
+          cargo clippy --workspace --all-targets --all-features -- -D warnings
 
       - name: cargo test
         if: ${{ hashFiles('**/*.rs') != '' }}
         run: cargo test --workspace --all-targets --all-features --locked
+
+      - name: cargo check (WASM)
+        if: ${{ hashFiles('**/*.rs') != '' }}
+        run: >-
+          cargo check -p typmark-wasm --target wasm32-unknown-unknown --locked

@@ -1,0 +1,14 @@
+{#raw_typst}
+```typst {render=svg}
+#rect(width: 12pt, height: 6pt)
+```
+
+See @raw_typst.
+
+```typst {render=png}
+#rect[Invalid render mode]
+```
+
+```typst {render=svg}
+#let = broken
+```

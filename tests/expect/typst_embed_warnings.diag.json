@@ -1,0 +1,58 @@
+[
+  {
+    "code": "W_TYPST_ATTR_INVALID",
+    "severity": "warning",
+    "range": {
+      "start": { "line": 1, "character": 31 },
+      "end": { "line": 1, "character": 38 }
+    }
+  },
+  {
+    "code": "W_TYPST_ATTR_INVALID",
+    "severity": "warning",
+    "range": {
+      "start": { "line": 0, "character": 2 },
+      "end": { "line": 0, "character": 14 }
+    }
+  },
+  {
+    "code": "W_TYPST_ATTR_INVALID",
+    "severity": "warning",
+    "range": {
+      "start": { "line": 0, "character": 20 },
+      "end": { "line": 0, "character": 27 }
+    }
+  },
+  {
+    "code": "W_TYPST_EXTERNAL_ASSET",
+    "severity": "warning",
+    "range": {
+      "start": { "line": 5, "character": 0 },
+      "end": { "line": 7, "character": 3 }
+    }
+  },
+  {
+    "code": "E_TYPST_RENDER",
+    "severity": "error",
+    "range": {
+      "start": { "line": 5, "character": 0 },
+      "end": { "line": 7, "character": 3 }
+    }
+  },
+  {
+    "code": "W_TYPST_MULTI_PAGE",
+    "severity": "warning",
+    "range": {
+      "start": { "line": 9, "character": 0 },
+      "end": { "line": 13, "character": 3 }
+    }
+  },
+  {
+    "code": "E_TYPST_RESOURCE_LIMIT",
+    "severity": "error",
+    "range": {
+      "start": { "line": 15, "character": 0 },
+      "end": { "line": 49, "character": 3 }
+    }
+  }
+]

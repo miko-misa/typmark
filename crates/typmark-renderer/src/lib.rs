@@ -477,4 +477,12 @@ mod tests {
         assert!(highlighted.contains("class=\"line\""));
         assert!(highlighted.contains("style=\""));
     }
+
+    #[test]
+    fn math_colors_do_not_override_typst_embed_paints() {
+        let css = Renderer::new(Theme::Light).stylesheet();
+        assert!(css.contains(".TypMark-math-block .typst-doc .typst-shape"));
+        assert!(!css.contains("\n.typst-doc .typst-shape {"));
+        assert!(css.contains(".TypMark-typst-block .typst-text use[fill=\"#000000\"]"));
+    }
 }

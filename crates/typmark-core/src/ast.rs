@@ -43,6 +43,8 @@ pub enum BlockKind {
     MathBlock {
         typst_src: String,
     },
+    TypstPreamble(TypstPreamble),
+    TypstBlock(TypstBlock),
     ThematicBreak,
     HtmlBlock {
         raw: String,
@@ -120,6 +122,25 @@ pub struct LineLabel {
 pub struct BoxBlock {
     pub title: Option<InlineSeq>,
     pub blocks: Vec<Block>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TypstBlock {
+    pub typst_src: String,
+    pub caption: Option<InlineSeq>,
+    pub render: TypstRenderMode,
+    pub info_attrs: AttrList,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TypstPreamble {
+    pub typst_src: String,
+    pub info_attrs: AttrList,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TypstRenderMode {
+    Svg,
 }
 
 #[derive(Clone, Debug, PartialEq)]

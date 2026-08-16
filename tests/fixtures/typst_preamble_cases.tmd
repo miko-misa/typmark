@@ -1,0 +1,16 @@
+```typst {scope=preamble}
+#let shared-fill = rgb("#e8f1fb")
+#let shared-stroke = rgb("#1f5da8")
+#let shared-rect() = rect(width: 12pt, height: 6pt, fill: shared-fill, stroke: shared-stroke)
+```
+
+{#shared-figure}
+```typst {render=svg caption="Shared rect"}
+#shared-rect()
+```
+
+See @shared-figure.
+
+```typst
+#shared-rect()
+```

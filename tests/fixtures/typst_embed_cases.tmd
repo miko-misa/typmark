@@ -1,0 +1,10 @@
+{#flow}
+```typst {render=svg caption="Flow *Diagram*" accent="#1f5da8"}
+#rect(width: 80pt, height: 28pt, fill: rgb("#e8f1fb"), stroke: rgb("#1f5da8"))
+```
+
+See @flow and @flow[custom flow].
+
+```typst
+#rect[This remains code.]
+```
