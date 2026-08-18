@@ -55,10 +55,13 @@
   }
 
   function setupMathScrollShadows() {
-    var blocks = document.querySelectorAll(".TypMark-math-block");
+    var blocks = Array.from(document.querySelectorAll(".TypMark-math-block"));
     if (!blocks.length) {
       return;
     }
+
+    var watched = new WeakSet();
+    var watchedBlocks = [];
 
     function ensureScrollTarget(block) {
       for (var i = 0; i < block.children.length; i++) {
@@ -101,6 +104,10 @@
     }
 
     function watchBlock(block) {
+      if (watched.has(block)) return;
+      watched.add(block);
+      watchedBlocks.push(block);
+
       var scrollTarget = ensureScrollTarget(block);
       var rafId = 0;
       var onScroll = () => {
@@ -126,10 +133,32 @@
       }
     }
 
-    blocks.forEach(watchBlock);
+    function watchAll() {
+      if (intersectionObserver) intersectionObserver.disconnect();
+      blocks.forEach(watchBlock);
+    }
+
+    if (typeof IntersectionObserver === "undefined") {
+      watchAll();
+    } else {
+      var intersectionObserver = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (!entry.isIntersecting) return;
+            intersectionObserver.unobserve(entry.target);
+            watchBlock(entry.target);
+          });
+        },
+        { rootMargin: "1000px 0px" },
+      );
+      blocks.forEach((block) => intersectionObserver.observe(block));
+      window.addEventListener("hashchange", watchAll);
+      window.addEventListener("beforeprint", watchAll);
+      if (window.location?.hash) watchAll();
+    }
 
     window.addEventListener("resize", () => {
-      blocks.forEach((block) => {
+      watchedBlocks.forEach((block) => {
         var scrollTarget = ensureScrollTarget(block);
         updateBlock(block, scrollTarget);
       });
@@ -509,6 +538,7 @@
       ),
     parseColor: parseHexColor,
     sourceIsDark: findSourceDark,
+    setupMathScrollShadows,
   };
 
   if (typeof module !== "undefined" && module.exports) {
